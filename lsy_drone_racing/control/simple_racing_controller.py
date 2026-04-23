@@ -1,3 +1,4 @@
+
 """Simple adaptive racing controller for Levels 0-2.
 
 Hardcoded gate-relative waypoints + CubicSpline trajectory.
@@ -21,13 +22,172 @@ import numpy as np
 from drone_models.core import load_params
 from scipy.interpolate import PchipInterpolator
 from scipy.spatial.transform import Rotation as Rot
-
-from lsy_drone_racing.control import Controller
-from lsy_drone_racing.control.online_rls import OnlineRLS
+from lsy_drone_racing.control.controller import Controller
 
 if TYPE_CHECKING:
     from crazyflow import Sim
     from numpy.typing import NDArray
+
+
+class OnlineRLS:
+    """Multi-parameter RLS estimator for drone dynamics parameters.
+
+    Estimates theta = [m, J_xx, J_yy, J_zz] using separate RLS channels for
+    translational (mass) and rotational (inertia) dynamics.
+    """
+
+    def __init__(
+        self,
+        nominal_mass: float,
+        nominal_J: NDArray[np.floating],
+        dt: float,
+        lambda_mass: float = 0.995,
+        lambda_inertia: float = 0.999,
+    ):
+        self._dt = dt
+        self._g = 9.81
+        self._nominal_mass = nominal_mass
+        self._nominal_J_diag = np.array([nominal_J[0, 0], nominal_J[1, 1], nominal_J[2, 2]])
+        self._n_params = 4
+        self._theta = np.array([
+            nominal_mass,
+            self._nominal_J_diag[0],
+            self._nominal_J_diag[1],
+            self._nominal_J_diag[2],
+        ])
+        self._P = np.diag([1e2, 1e6, 1e6, 1e6])
+        self._lambda_diag = np.array([
+            lambda_mass, lambda_inertia, lambda_inertia, lambda_inertia,
+        ])
+        self._prev_vel: NDArray | None = None
+        self._prev_ang_vel: NDArray | None = None
+        self._prev_z_axis: NDArray | None = None
+        self._prev_rpy_rates: NDArray | None = None
+        self._n_updates = 0
+        self._min_updates_for_valid = 10
+        self._mass_bounds = (nominal_mass * 0.85, nominal_mass * 1.15)
+        self._J_bounds = (self._nominal_J_diag * 0.5, self._nominal_J_diag * 2.0)
+
+    @property
+    def mass(self) -> float:
+        return float(self._theta[0])
+
+    @property
+    def J_diag(self) -> NDArray[np.floating]:
+        return self._theta[1:4].copy()
+
+    @property
+    def covariance(self) -> NDArray[np.floating]:
+        return self._P.copy()
+
+    @property
+    def is_converged(self) -> bool:
+        return self._n_updates >= self._min_updates_for_valid
+
+    def posterior(self) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
+        return self._theta.copy(), self._P.copy()
+
+    def reset(self):
+        self._theta = np.array([
+            self._nominal_mass,
+            self._nominal_J_diag[0],
+            self._nominal_J_diag[1],
+            self._nominal_J_diag[2],
+        ])
+        self._P = np.diag([1e2, 1e6, 1e6, 1e6])
+        self._prev_vel = None
+        self._prev_ang_vel = None
+        self._prev_z_axis = None
+        self._prev_rpy_rates = None
+        self._n_updates = 0
+
+    def update(
+        self,
+        obs: dict[str, NDArray[np.floating]],
+        thrust_cmd: float,
+        torque_cmd: NDArray[np.floating],
+    ):
+        vel = np.asarray(obs["vel"], dtype=np.float64)
+        ang_vel = np.asarray(obs["ang_vel"], dtype=np.float64)
+        quat = np.asarray(obs["quat"], dtype=np.float64)
+        rot_mat = Rot.from_quat(quat).as_matrix()
+        z_axis = rot_mat[:, 2]
+
+        if self._prev_vel is None:
+            self._prev_vel = vel.copy()
+            self._prev_ang_vel = ang_vel.copy()
+            self._prev_z_axis = z_axis.copy()
+            return
+
+        lin_accel = (vel - self._prev_vel) / self._dt
+        ang_accel = (ang_vel - self._prev_ang_vel) / self._dt
+        self._update_mass(lin_accel, thrust_cmd)
+        self._update_inertia(ang_accel, ang_vel)
+        self._prev_vel = vel.copy()
+        self._prev_ang_vel = ang_vel.copy()
+        self._prev_z_axis = z_axis.copy()
+        self._n_updates += 1
+
+    def _update_mass(self, lin_accel: NDArray, thrust_cmd: float):
+        g_vec = np.array([0.0, 0.0, self._g])
+        rhs = lin_accel + g_vec
+        y = thrust_cmd * self._prev_z_axis[2]
+        phi = rhs[2]
+        if abs(phi) < 0.5:
+            return
+        phi_full = np.zeros(self._n_params)
+        phi_full[0] = phi
+        self._rls_update(y, phi_full)
+
+    def _update_inertia(self, ang_accel: NDArray, ang_vel: NDArray):
+        wx, wy, wz = ang_vel
+        ax, ay, az = ang_accel
+        prev_wx, prev_wy, prev_wz = self._prev_ang_vel
+        gyro_mag = abs(wy * wz) + abs(wz * wx) + abs(wx * wy)
+        if gyro_mag < 0.1:
+            return
+        alpha_mag = np.linalg.norm(ang_accel)
+        if alpha_mag < 0.5:
+            return
+        J_xx_est, J_yy_est, J_zz_est = self._theta[1], self._theta[2], self._theta[3]
+        tau_x_est = J_xx_est * ax - (J_yy_est - J_zz_est) * wy * wz
+        tau_y_est = J_yy_est * ay - (J_zz_est - J_xx_est) * wz * wx
+        tau_z_est = J_zz_est * az - (J_xx_est - J_yy_est) * wx * wy
+
+        phi_x = np.array([0.0, ax, -wy * wz, wy * wz])
+        if np.linalg.norm(phi_x[1:]) > 0.1:
+            self._rls_update(tau_x_est, phi_x)
+
+        phi_y = np.array([0.0, wz * wx, ay, -wz * wx])
+        if np.linalg.norm(phi_y[1:]) > 0.1:
+            self._rls_update(tau_y_est, phi_y)
+
+        phi_z = np.array([0.0, -wx * wy, wx * wy, az])
+        if np.linalg.norm(phi_z[1:]) > 0.1:
+            self._rls_update(tau_z_est, phi_z)
+
+    def _rls_update(self, y: float, phi: NDArray):
+        y_pred = phi @ self._theta
+        innovation = y - y_pred
+        P_phi = self._P @ phi
+        denom = 1.0 + phi @ P_phi
+        K = P_phi / denom
+        self._theta += K * innovation
+        W = np.diag(1.0 / np.sqrt(self._lambda_diag))
+        P_updated = self._P - np.outer(K, phi @ self._P)
+        self._P = W @ P_updated @ W
+        self._P = 0.5 * (self._P + self._P.T)
+        min_eig = np.min(np.diag(self._P))
+        if min_eig < 1e-12:
+            self._P += np.eye(self._n_params) * 1e-10
+        self._clamp_parameters()
+
+    def _clamp_parameters(self):
+        self._theta[0] = np.clip(self._theta[0], *self._mass_bounds)
+        for i in range(3):
+            self._theta[i + 1] = np.clip(
+                self._theta[i + 1], self._J_bounds[0][i], self._J_bounds[1][i],
+            )
 
 
 class SimpleRacingController(Controller):
