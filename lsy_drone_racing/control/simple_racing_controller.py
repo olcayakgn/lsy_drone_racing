@@ -9,7 +9,7 @@ Track layout (nominal, from config):
   Gates:  [0.5,0.25,0.7]  [1.05,0.75,1.2]  [-1.0,-0.25,0.7]  [0.0,-0.75,1.2]
   Obstacles: [0.0,0.75] [1.0,0.25] [-1.5,-0.25] [-0.5,-0.75]
   Start: [-1.5, 0.75, 0.01] 
-  Gate opening: 0.4m x 0.4m, outer frame 0.72m x 0.72m
+  Gate opening: 0.4m x 0.4m, outer frame 0.72m x 0.72m te
   Obstacle poles: radius 0.015m, ~1.6m tall  
 """  
 
@@ -435,7 +435,7 @@ class SimpleRacingController(Controller):
         # Time allocation: distance / cruise_speed, minimum 0.15s per segment
         # Corner penalty: slow down at sharp turns to reduce overshoot
         dists = np.linalg.norm(np.diff(wps, axis=0), axis=1)
-        cruise_speed = 1.0
+        cruise_speed = 0.8
         times = np.maximum(dists / cruise_speed, 0.15)
         # Compute direction changes and penalize sharp corners
         for si in range(1, len(dists)):
