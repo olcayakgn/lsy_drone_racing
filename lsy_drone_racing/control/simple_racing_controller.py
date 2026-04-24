@@ -1,4 +1,3 @@
-
 """Simple adaptive racing controller for Levels 0-2.
 
 Hardcoded gate-relative waypoints + CubicSpline trajectory.
@@ -12,7 +11,6 @@ Track layout (nominal, from config):
   Start: [-1.5, 0.75, 0.01]
   Gate opening: 0.4m x 0.4m, outer frame 0.72m x 0.72m
   Obstacle poles: radius 0.015m, ~1.6m tall
-  +dummy changes
 """
 
 from __future__ import annotations
@@ -23,6 +21,7 @@ import numpy as np
 from drone_models.core import load_params
 from scipy.interpolate import PchipInterpolator
 from scipy.spatial.transform import Rotation as Rot
+
 from lsy_drone_racing.control.controller import Controller
 
 if TYPE_CHECKING:
@@ -45,21 +44,22 @@ class OnlineRLS:
         lambda_mass: float = 0.995,
         lambda_inertia: float = 0.999,
     ):
+        """Initialize the RLS estimator."""
         self._dt = dt
         self._g = 9.81
         self._nominal_mass = nominal_mass
         self._nominal_J_diag = np.array([nominal_J[0, 0], nominal_J[1, 1], nominal_J[2, 2]])
         self._n_params = 4
-        self._theta = np.array([
-            nominal_mass,
-            self._nominal_J_diag[0],
-            self._nominal_J_diag[1],
-            self._nominal_J_diag[2],
-        ])
+        self._theta = np.array(
+            [
+                nominal_mass,
+                self._nominal_J_diag[0],
+                self._nominal_J_diag[1],
+                self._nominal_J_diag[2],
+            ]
+        )
         self._P = np.diag([1e2, 1e6, 1e6, 1e6])
-        self._lambda_diag = np.array([
-            lambda_mass, lambda_inertia, lambda_inertia, lambda_inertia,
-        ])
+        self._lambda_diag = np.array([lambda_mass, lambda_inertia, lambda_inertia, lambda_inertia])
         self._prev_vel: NDArray | None = None
         self._prev_ang_vel: NDArray | None = None
         self._prev_z_axis: NDArray | None = None
@@ -71,30 +71,38 @@ class OnlineRLS:
 
     @property
     def mass(self) -> float:
+        """Current mass estimate."""
         return float(self._theta[0])
 
     @property
     def J_diag(self) -> NDArray[np.floating]:
+        """Current inertia diagonal estimate."""
         return self._theta[1:4].copy()
 
     @property
     def covariance(self) -> NDArray[np.floating]:
+        """Current parameter covariance matrix."""
         return self._P.copy()
 
     @property
     def is_converged(self) -> bool:
+        """Whether enough updates have been collected."""
         return self._n_updates >= self._min_updates_for_valid
 
     def posterior(self) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
+        """Return the Gaussian posterior for scenario sampling."""
         return self._theta.copy(), self._P.copy()
 
     def reset(self):
-        self._theta = np.array([
-            self._nominal_mass,
-            self._nominal_J_diag[0],
-            self._nominal_J_diag[1],
-            self._nominal_J_diag[2],
-        ])
+        """Reset estimator to initial state."""
+        self._theta = np.array(
+            [
+                self._nominal_mass,
+                self._nominal_J_diag[0],
+                self._nominal_J_diag[1],
+                self._nominal_J_diag[2],
+            ]
+        )
         self._P = np.diag([1e2, 1e6, 1e6, 1e6])
         self._prev_vel = None
         self._prev_ang_vel = None
@@ -108,6 +116,7 @@ class OnlineRLS:
         thrust_cmd: float,
         torque_cmd: NDArray[np.floating],
     ):
+        """Update parameter estimates from new observation."""
         vel = np.asarray(obs["vel"], dtype=np.float64)
         ang_vel = np.asarray(obs["ang_vel"], dtype=np.float64)
         quat = np.asarray(obs["quat"], dtype=np.float64)
@@ -187,7 +196,7 @@ class OnlineRLS:
         self._theta[0] = np.clip(self._theta[0], *self._mass_bounds)
         for i in range(3):
             self._theta[i + 1] = np.clip(
-                self._theta[i + 1], self._J_bounds[0][i], self._J_bounds[1][i],
+                self._theta[i + 1], self._J_bounds[0][i], self._J_bounds[1][i]
             )
 
 
@@ -195,6 +204,7 @@ class SimpleRacingController(Controller):
     """Simple adaptive racing controller for Levels 0-2."""
 
     def __init__(self, obs: dict[str, NDArray[np.floating]], info: dict, config: dict):
+        """Initialize the racing controller."""
         super().__init__(obs, info, config)
         self._freq = config.env.freq
         self._dt = 1.0 / self._freq
@@ -206,9 +216,7 @@ class SimpleRacingController(Controller):
 
         # RLS mass estimation (Level 1: randomized inertia/mass)
         self._rls = OnlineRLS(
-            nominal_mass=self._nominal_mass,
-            nominal_J=np.array(params["J"]),
-            dt=self._dt,
+            nominal_mass=self._nominal_mass, nominal_J=np.array(params["J"]), dt=self._dt
         )
 
         # PID gains
@@ -273,9 +281,9 @@ class SimpleRacingController(Controller):
                 # After gate 0: swing OUTWARD (south) around obstacle 1 [1.0,0.25]
                 # Corner-rounding: two intermediate points to smooth the turn
                 # so the interpolator doesn't overshoot at the sharp corner.
-                wps.append(np.array([0.9, -0.05, 0.8]))   # ease into the turn
-                wps.append(np.array([1.3, -0.15, 0.9]))    # apex south of obs1
-                wps.append(np.array([1.3, 0.30, 1.05]))    # round the corner north
+                wps.append(np.array([0.9, -0.05, 0.8]))  # ease into the turn
+                wps.append(np.array([1.3, -0.15, 0.9]))  # apex south of obs1
+                wps.append(np.array([1.3, 0.30, 1.05]))  # round the corner north
                 wps.append(g[1].copy())
             elif i == 2:
                 # Gate 2 normal=(-1.0,0): approach from +x side, exit -x
@@ -293,7 +301,7 @@ class SimpleRacingController(Controller):
                     # 2. Ease back east (corner-rounding for the dip reversal)
                     # Must stay on exit side of gate (local_x > 0, world_x < gate_x)
                     wps.append(g[2] + np.array([-0.06, 0.0, 0.0]))  # still past gate
-                    wps.append(g[2] + np.array([0.4, 0.0, 0.0]))    # fully east
+                    wps.append(g[2] + np.array([0.4, 0.0, 0.0]))  # fully east
                     # 3. Climb to gate 3 altitude right here (vertical ascent)
                     wps.append(g[2] + np.array([0.4, 0.0, g[3][2] - g[2][2]]))
                 # 4. At altitude, head toward gate 3 approach
@@ -321,8 +329,8 @@ class SimpleRacingController(Controller):
         # Gate opening: 0.4m x 0.4m, outer frame 0.72m x 0.72m
         # With drone radius 0.05m, effective opening = 0.3m x 0.3m
         half_opening = 0.14  # conservative: 0.20 - 0.05 drone - 0.01 margin
-        half_outer = 0.36    # outer frame half-width
-        gate_safe = 0.15     # minimum clearance from frame edge
+        half_outer = 0.36  # outer frame half-width
+        gate_safe = 0.15  # minimum clearance from frame edge
 
         # Pass 0: ensure waypoints near gates pass through the opening, not the frame
         for i in range(1, len(wps)):
@@ -539,7 +547,7 @@ class SimpleRacingController(Controller):
     # ---- Control ----
 
     def compute_control(
-        self, obs: dict[str, NDArray[np.floating]], info: dict | None = None,
+        self, obs: dict[str, NDArray[np.floating]], info: dict | None = None
     ) -> NDArray[np.floating]:
         """PID + feedforward -> attitude command [roll, pitch, yaw, thrust]."""
         t = self._tick / self._freq - self._t_offset
@@ -604,9 +612,7 @@ class SimpleRacingController(Controller):
         if err_mag > 0.3:
             pos_err = pos_err * (0.3 / err_mag)
         vel_err = des_vel - obs["vel"]
-        self._i_error = np.clip(
-            self._i_error + pos_err * self._dt, -self._i_limit, self._i_limit
-        )
+        self._i_error = np.clip(self._i_error + pos_err * self._dt, -self._i_limit, self._i_limit)
 
         mass = self._rls.mass
         thrust_vec = (
@@ -651,6 +657,7 @@ class SimpleRacingController(Controller):
         truncated: bool,
         info: dict,
     ) -> bool:
+        """Post-step update: RLS, gate tracking, and trajectory patching."""
         self._tick += 1
 
         # RLS mass update
@@ -670,9 +677,7 @@ class SimpleRacingController(Controller):
         shifted_obstacles = []
         for i in range(self._n_gates):
             if obs["gates_visited"][i] and not self._gates_visited[i]:
-                shift = float(np.linalg.norm(
-                    self._gate_positions[i] - obs["gates_pos"][i]
-                ))
+                shift = float(np.linalg.norm(self._gate_positions[i] - obs["gates_pos"][i]))
                 if shift > 0.03:
                     gate_shifted = True
                 self._gate_positions[i] = np.array(obs["gates_pos"][i], dtype=np.float64)
@@ -680,14 +685,10 @@ class SimpleRacingController(Controller):
 
         for i in range(len(self._obstacle_positions)):
             if obs["obstacles_visited"][i] and not self._obstacles_visited[i]:
-                shift = float(np.linalg.norm(
-                    self._obstacle_positions[i] - obs["obstacles_pos"][i]
-                ))
+                shift = float(np.linalg.norm(self._obstacle_positions[i] - obs["obstacles_pos"][i]))
                 if shift > 0.03:
                     shifted_obstacles.append(i)
-                self._obstacle_positions[i] = np.array(
-                    obs["obstacles_pos"][i], dtype=np.float64
-                )
+                self._obstacle_positions[i] = np.array(obs["obstacles_pos"][i], dtype=np.float64)
 
         self._gates_visited = np.array(obs["gates_visited"], dtype=bool)
         self._obstacles_visited = np.array(obs["obstacles_visited"], dtype=bool)
@@ -703,6 +704,7 @@ class SimpleRacingController(Controller):
         return self._finished
 
     def episode_callback(self):
+        """Reset internal state after an episode."""
         self._tick = 0
         self._finished = False
         self._i_error[:] = 0
@@ -711,9 +713,11 @@ class SimpleRacingController(Controller):
         self._rls.reset()
 
     def episode_reset(self):
+        """Reset the controller for a new episode."""
         self.episode_callback()
 
     def render_callback(self, sim: Sim):
+        """Draw the planned trajectory and current setpoint."""
         from crazyflow.sim.visualize import draw_line, draw_points
 
         t = self._tick / self._freq - self._t_offset
@@ -724,4 +728,5 @@ class SimpleRacingController(Controller):
         draw_line(sim, np.array(pts), rgba=(0.0, 1.0, 0.0, 1.0))
 
     def reset(self):
+        """Reset internal variables."""
         self.episode_callback()
