@@ -11,7 +11,7 @@ Track layout (nominal, from config):
   Start: [-1.5, 0.75, 0.01] 
   Gate opening: 0.4m x 0.4m, outer frame 0.72m x 0.72m
   Obstacle poles: radius 0.015m, ~1.6m tall  
-"""
+""" 
 
 from __future__ import annotations
 
