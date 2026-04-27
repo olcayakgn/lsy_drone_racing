@@ -278,36 +278,38 @@ class SimpleRacingController(Controller):
                 wps.append(g[0] + np.array([-0.2, 0.15, 0.0]))
                 wps.append(g[0].copy())
             elif i == 1:
-                # After gate 0: swing OUTWARD (south) around obstacle 1 [1.0,0.25]
-                # Corner-rounding: two intermediate points to smooth the turn
-                # so the interpolator doesn't overshoot at the sharp corner.
-                wps.append(np.array([0.9, -0.05, 0.8]))  # ease into the turn
-                wps.append(np.array([1.3, -0.15, 0.9]))  # apex south of obs1
-                wps.append(np.array([1.3, 0.30, 1.05]))  # round the corner north
+                # SE detour around obs1 [1.0,0.25] — tightened curvature: pulled
+                # 2nd and 3rd intermediates inward (x:1.40→1.35, last:1.55→1.50,
+                # 0.55→0.50) for a less wide arc. Worst-case obs1 shifts are at
+                # ~0.24m on the wp2-wp3 segment; Pass 2 avoidance handles edge
+                # cases. x is still monotone 0.85→1.35→1.50, so x-based skip is
+                # still valid for mid-flight rebuilds.
+                sx = float(start_pos[0])
+                sy = float(start_pos[1])
+                if sx < 1.00:
+                    wps.append(np.array([0.85, -0.10, 0.82]))
+                if sx < 1.39:
+                    wps.append(np.array([1.35, -0.10, 1.00]))
+                if sx < 1.53 or sy < 0.40:
+                    wps.append(np.array([1.50, 0.50, 1.10]))
                 wps.append(g[1].copy())
             elif i == 2:
-                # Gate 2 normal=(-1.0,0): approach from +x side, exit -x
+                # Tilted entry (~22° from gate normal): single approach waypoint,
+                # no center-y corrective intermediate. The drone passes gate 2 with
+                # mild southward velocity that flows smoothly into the post-gate SW
+                # arc — eliminates the curl visible right at the frame.
                 wps.append(np.array([-0.5, -0.05, 0.7]))
-                wps.append(g[2] + np.array([0.35, 0.08, 0.0]))
                 wps.append(g[2].copy())
             elif i == 3:
                 if not self._dip_done:
-                    # "DIP" maneuver for gate 2 exit:
-                    # Pole at [-1.5,-0.25] is right behind gate 2 [-1.0,-0.25,0.7].
-                    # Enter gate, go barely past, come back out at SAME height.
-                    # Climb only after safely back on the east (+x) side.
-                    # 1. Barely past gate plane (level, same z)
-                    wps.append(g[2] + np.array([-0.12, 0.0, 0.0]))
-                    # 2. Ease back east (corner-rounding for the dip reversal)
-                    # Must stay on exit side of gate (local_x > 0, world_x < gate_x)
-                    wps.append(g[2] + np.array([-0.06, 0.0, 0.0]))  # still past gate
-                    wps.append(g[2] + np.array([0.4, 0.0, 0.0]))  # fully east
-                    # 3. Climb to gate 3 altitude right here (vertical ascent)
-                    wps.append(g[2] + np.array([0.4, 0.0, g[3][2] - g[2][2]]))
-                # 4. At altitude, head toward gate 3 approach
-                # Route directly toward gate 3, staying >0.25m from obs3 [-0.5,-0.75].
-                # Must be >0.3m from gate 3 plane in local_x to avoid gate frame
-                # check clamping (gate 3 normal=+x, so need world_x < g3_x - 0.3).
+                    # No dip: pass gate 2 going west, smooth SW arc to clear obs2
+                    # [-1.5,-0.25] and gate-2 frame, climb to gate-3 altitude, then
+                    # arc east toward gate 3. Each waypoint either has |local_y|>0.51
+                    # (outside gate-2 frame zone) or |local_x|>0.3 (past gate plane),
+                    # so Pass 0 never pushes them into the gate opening.
+                    wps.append(g[2] + np.array([-0.12, 0.0, 0.0]))    # past gate, in opening
+                    wps.append(g[2] + np.array([-0.32, -0.40, 0.30])) # SW + climb (|local_x|=0.32)
+                    wps.append(g[2] + np.array([0.10, -0.55, 0.50]))  # SE at gate-3 altitude
                 wps.append(np.array([-0.35, -0.45, g[3][2]]))
                 wps.append(g[3].copy())
                 wps.append(g[3] + np.array([0.5, 0.0, 0.0]))
@@ -323,8 +325,7 @@ class SimpleRacingController(Controller):
         Drone radius ~0.05m (Crazyflie 92mm motor-to-motor) is accounted for.
         """
         obs_xy = self._obstacle_positions[:, :2]
-        # Per-obstacle safe distances: obs 1 and 3 are on tight corners, use smaller margin
-        safe_dists = np.array([0.25, 0.15, 0.25, 0.15])
+        safe_dists = np.array([0.25, 0.25, 0.25, 0.15])
 
         # Gate opening: 0.4m x 0.4m, outer frame 0.72m x 0.72m
         # With drone radius 0.05m, effective opening = 0.3m x 0.3m
@@ -433,10 +434,12 @@ class SimpleRacingController(Controller):
                     self._gate_knot_mask[wi] = True
 
         # Time allocation: distance / cruise_speed, minimum 0.15s per segment
-        # Corner penalty: slow down at sharp turns to reduce overshoot
+        # Per-segment cruise: faster (1.3 m/s) on long straight traverses (>1.0m),
+        # slower (0.8 m/s) on short detour segments. The long gate1 → gate2-approach
+        # leg (~1.8m) gets the speed bump; corner penalty still slows sharp turns.
         dists = np.linalg.norm(np.diff(wps, axis=0), axis=1)
-        cruise_speed = 0.8
-        times = np.maximum(dists / cruise_speed, 0.15)
+        cruise_speeds = np.where(dists > 1.0, 1.3, 0.8)
+        times = np.maximum(dists / cruise_speeds, 0.15)
         # Compute direction changes and penalize sharp corners
         for si in range(1, len(dists)):
             d_prev = wps[si] - wps[si - 1]
@@ -472,7 +475,7 @@ class SimpleRacingController(Controller):
         if not shifted_obstacle_indices:
             return
         obs_xy = self._obstacle_positions[:, :2]
-        safe_dists = np.array([0.25, 0.15, 0.25, 0.15])
+        safe_dists = np.array([0.25, 0.25, 0.25, 0.15])
         wps = self._wps.copy()
         t_knots = self._t_knots.copy()
         changed = False
@@ -666,7 +669,7 @@ class SimpleRacingController(Controller):
 
         self._target_gate = int(obs["target_gate"])
 
-        # Detect dip completion: target is gate 3 and drone is well above gate 2
+        # Mark dip complete once drone has climbed above mid-z between gates 2 and 3
         if self._target_gate == 3 and not self._dip_done:
             mid_z = (self._gate_positions[2][2] + self._gate_positions[3][2]) / 2
             if obs["pos"][2] > mid_z:
