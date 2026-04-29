@@ -18,8 +18,10 @@ jobs:
       - name: Send Dispatch to Central Repo
         run: |
           # Notice the URL now ends with /competition.yaml/dispatches
-          curl -X POST https://api.github.com/repos/utiasDSL/lsy_drone_racing/actions/workflows/competition.yaml/dispatches \
-          -H "Accept: application/vnd.github.v3+json" \
+          curl -L --fail-with-body -sS -X POST "https://api.github.com/repos/utiasDSL/lsy_drone_racing/actions/workflows/competition.yaml/dispatches" \
+          -H "Accept: application/vnd.github+json" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+          -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ secrets.DISPATCH_TOKEN }}" \
           -d '{
             "ref": "competition",
