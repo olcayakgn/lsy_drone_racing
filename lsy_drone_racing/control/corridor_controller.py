@@ -1,7 +1,7 @@
 """SFC based hybrid adaptive controller.
 
 S. Liu et al., "Planning Dynamically Feasible Trajectories for Quadrotors Using Safe
-Flight Corridors in 3-D Complex Environment".           
+Flight Corridors in 3-D Complex Environment".            
 """
 
 from __future__ import annotations
