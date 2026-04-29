@@ -254,6 +254,37 @@ class SimpleRacingController(Controller):
         """Gate fly-through direction (local x-axis)."""
         return Rot.from_quat(quat).as_matrix()[:, 0]
 
+    def _gate_anchor(self, gi: int, sign: int, gap: float = 0.25) -> np.ndarray:
+        """Anchor point along gate `gi`'s normal: pre-anchor (sign=-1) or post-anchor (+1).
+
+        Borrowed from kpp_controller's skeleton path (`pre_pos = pos - normal*gap`,
+        `post_pos = pos + normal*gap`). Using the gate normal explicitly creates a
+        symmetric pre/post pair, which makes the spline pass through the gate
+        aligned with the normal — straighter pass-through, less frame-clip risk.
+        """
+        return self._gate_positions[gi] + sign * self._gate_normal(self._gate_quats[gi]) * gap
+
+    def _gate_frame_capsules(self, gi: int):
+        """Yield 4 capsule bars (top, bottom, left, right) for gate `gi` as (p1, p2, radius).
+
+        Borrowed from kpp_controller's `_get_all_obstacle_capsules`. Each frame
+        bar is modeled as a line segment with radius. Replaces the old Pass-0
+        in_frame/in_opening heuristic, which had a buggy boundary case (avoidance
+        waypoints with |local_y|=0.15 just outside the 0.14 opening got pushed
+        TOWARD the gate center). Capsule pushes are exact and away-from-bar.
+        """
+        pos = self._gate_positions[gi]
+        Rm = Rot.from_quat(self._gate_quats[gi]).as_matrix()
+        up = Rm[:, 2]      # local z (world up for vertical gates)
+        right = Rm[:, 1]   # local y (horizontal, perpendicular to gate normal)
+        bd = 0.28          # bar centerline distance from gate center
+        br = 0.04          # bar effective radius (~25mm rod + small margin)
+        h = 0.36           # bar half-extent
+        yield pos + up * bd - right * h, pos + up * bd + right * h, br   # top
+        yield pos - up * bd - right * h, pos - up * bd + right * h, br   # bottom
+        yield pos - right * bd + up * h, pos - right * bd - up * h, br   # left
+        yield pos + right * bd + up * h, pos + right * bd - up * h, br   # right
+
     # ---- Waypoint generation ----
 
     def _compute_waypoints(self, start_pos: np.ndarray) -> np.ndarray:
@@ -438,7 +469,7 @@ class SimpleRacingController(Controller):
         # slower (0.8 m/s) on short detour segments. The long gate1 → gate2-approach
         # leg (~1.8m) gets the speed bump; corner penalty still slows sharp turns.
         dists = np.linalg.norm(np.diff(wps, axis=0), axis=1)
-        cruise_speeds = np.where(dists > 1.0, 1.3, 0.8)
+        cruise_speeds = np.where(dists > 1.0, 1.2, 0.8)
         times = np.maximum(dists / cruise_speeds, 0.15)
         # Compute direction changes and penalize sharp corners
         for si in range(1, len(dists)):
