@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0.0", "wheel", "numpy>=2.0.0"]
+requires = ["setuptools>=61.0.0", "wheel", "numpy>=2.0.0", "cvxpy"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -22,7 +22,7 @@ classifiers = [
 ########################
 # Pip Dependencies
 ########################
-dependencies = ["fire >= 0.6.0", "numpy", "toml >= 0.10.2", "cvxpy"]
+dependencies = ["fire >= 0.6.0", "numpy", "toml >= 0.10.2"]
 
 [project.optional-dependencies]
 # option[sim]: basic simulation
