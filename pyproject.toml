@@ -35,6 +35,7 @@ sim = [
     "crazyflow>=0.1.0",
     "jax >= 0.7",
     "warp-lang",
+    "cvxpy"
 ]
 # option[gpu]: simulation with gpu
 gpu = ["jax[cuda12]"]
