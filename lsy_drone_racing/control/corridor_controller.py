@@ -1,17 +1,10 @@
-"""B-spline trajectory controller using convex corridors for obstacle-aware flight.
-
-Builds a smooth B-spline reference through dynamically updated waypoints, with each
-segment confined to a convex polytope that excludes capsule-shaped obstacles. The
-spline is regenerated whenever a gate or pole pose update is detected.
-"""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, NamedTuple
 
 import cvxpy as cp
 import numpy as np
-from crazyflow.sim.visualize import draw_line, draw_points
+from crazyflow.sim.visualize import draw_line
 from scipy.interpolate import BSpline
 from scipy.spatial.transform import Rotation as R
 
@@ -23,14 +16,7 @@ if TYPE_CHECKING:
 
 
 class WayNode(NamedTuple):
-    """A waypoint along the planned route, with optional gate-frame data.
-
-    `is_authored=True` marks waypoints placed by an explicit hardcoded template
-    (exit_detour entries, next_pre_override). Authored waypoints are treated as
-    intentional design — the obstacle-circle deflection skips segments between
-    two authored points, and the QP relaxes gate-axis / symmetry constraints
-    when an authored waypoint sits adjacent to a gate.
-    """
+    """A waypoint along the planned route, with optional gate-frame data."""
 
     pos: NDArray
     is_gate: bool
@@ -41,20 +27,7 @@ class WayNode(NamedTuple):
 
 
 class GateTransition(NamedTuple):
-    """Hardcoded auxiliary waypoints surrounding one gate.
-
-    `entry_swing_lat`: lateral offset along this gate's `right` axis to insert
-        as an entry swing point (0 disables).
-    `exit_detour`: tuple of (forward, lateral, dz) offsets applied AFTER the gate.
-        - forward: along this gate's `normal` (positive = exit side).
-        - lateral: along this gate's `right`.
-        - dz: world-frame z offset (kept world-aligned so altitude changes don't
-          couple with gate tilt).
-        When non-empty, this list REPLACES the default post-anchor.
-    `next_pre_override`: optional (forward, lateral, dz) offset expressed in the
-        NEXT gate's local frame (forward along its normal, on the approach side
-        when negative, etc.), replacing the default `pre = gate - normal*anchor_gap`.
-    """
+    """Hardcoded auxiliary waypoints surrounding one gate - gate3."""
 
     entry_swing_lat: float
     exit_detour: tuple[tuple[float, float, float], ...]
@@ -63,9 +36,6 @@ class GateTransition(NamedTuple):
 
 # Per-gate transition template for the level2 track (4 gates, fixed order).
 LEVEL2_TRANSITIONS: tuple[GateTransition, ...] = (
-    # Gate 0: hairpin exit toward gate 1 (right side).
-    # Equivalent to legacy clearance=1.0, swing_lat=+1.0, swing_back=0.7
-    # with anchor_gap=0.45, expressed as forward/lateral/dz triples.
     GateTransition(
         0.0,
         ((0.45, 0.0, 0.0), (1.45, 0.0, 0.0), (0.75, 1.0, 0.0)),
@@ -73,15 +43,30 @@ LEVEL2_TRANSITIONS: tuple[GateTransition, ...] = (
     ),
     # Gate 1: straight pass-through, default post-anchor.
     GateTransition(0.0, (), None),
-    # Gate 2: simple_racing-style climbing detour around pole 3.
-    # Three exit waypoints climb to gate-3 altitude while drifting south,
-    # keeping the path xy >= 0.17 m from pole [-0.5, -0.75]. The next-gate
-    # pre-override approaches gate 3 from the NW (off-axis) so the final
-    # leg does not cross the line through the pole.
+    # Gate 3 (1-indexed): hairpin out toward gate 4. The climb from gate-3
+    # altitude (z=0.70) up to gate-4 altitude (z=1.20) is deferred to the
+    # WP1->WP2 leg — that leg is far west (x<=-1.45) so the climb through
+    # the top bar's z range happens with ample xy clearance from the bar.
+    # 4-waypoint detour:
+    #   WP0: clean exit through opening (z=0.70)
+    #   WP1: SW at gate-3 altitude. Forward extended to 0.60 so the WP0->WP1
+    #        chord clears the right-bar capsule by 0.032 m (perpendicular
+    #        distance 0.292 m vs 0.260 m capsule radius). Pole 3's worst-case
+    #        randomized position can sit on this segment — handled by the
+    #        deflection re-enabled for poles on authored segments.
+    #   WP2: SW + climb to z=1.35 (above right-bar top capsule cap at z=1.32)
+    #   WP3: back east at gate-4 altitude
+    # Pre-anchor for gate 4 lifted to dz=0.10 so the WP3-pre4 chord midpoint
+    # also clears the bar's top hemisphere.
     GateTransition(
         0.0,
-        ((0.12, 0.0, 0.0), (0.32, 0.40, 0.30), (-0.10, 0.55, 0.50)),
-        (-0.35, 0.30, 0.0),
+        (
+            (0.12, 0.0, 0.0),
+            (0.60, 0.40, 0.0),
+            (0.45, 0.50, 0.65),
+            (0.10, 0.55, 0.55),
+        ),
+        (-0.35, 0.30, 0.10),
     ),
     # Gate 3: terminal pass-through.
     GateTransition(0.0, (), None),
@@ -227,14 +212,12 @@ class CorridorController(Controller):
             vel_now: Current drone velocity.
         """
         skeleton = self._build_skeleton(pos_now[:3])
-        self.skeleton_path = skeleton
         self._anchor_pos = pos_now[:3].copy()
 
         capsules = self._collect_capsules()
         corridors = self._build_corridors(skeleton, capsules)
 
         ctrl_pts = self._solve_qp(skeleton, corridors, vel_now)
-        self._control_points = ctrl_pts
 
         order = 3
         n = len(ctrl_pts)
@@ -533,17 +516,17 @@ class CorridorController(Controller):
             else:
                 path.append(WayNode(pos + normal * self.anchor_gap, False, None, None, None))
 
-        # 2D circular keep-out deflection in three smoothing passes
-        circles: list[tuple[NDArray, float]] = []
+        pole_circles: list[tuple[NDArray, float]] = []
         for p in self.obstacles_pos:
-            circles.append((p[:2], self.pole_radius + 0.15))
+            pole_circles.append((p[:2], self.pole_radius + 0.15))
+        gate_bar_circles: list[tuple[NDArray, float]] = []
         for p, q in zip(self.gates_pos, self.gates_quat):
-            rot = R.from_quat(q)
-            right = rot.apply([0.0, 1.0, 0.0])
+            rot_g = R.from_quat(q)
+            right_g = rot_g.apply([0.0, 1.0, 0.0])
             bar_dist = 0.28
             r_keep = 0.08 + 0.10
-            circles.append(((p - right * bar_dist)[:2], r_keep))
-            circles.append(((p + right * bar_dist)[:2], r_keep))
+            gate_bar_circles.append(((p - right_g * bar_dist)[:2], r_keep))
+            gate_bar_circles.append(((p + right_g * bar_dist)[:2], r_keep))
 
         smoothed = path
         for _ in range(3):
@@ -556,12 +539,10 @@ class CorridorController(Controller):
                 ab = curr_pt[:2] - prev_pt[:2]
                 len_sq = float(np.dot(ab, ab))
 
-                # Skip deflection between two authored waypoints — that segment
-                # was placed deliberately (detour, override, gate center) and
-                # any inserted detour would fight the design.
                 if prev_node.is_authored and curr_node.is_authored:
-                    nxt_path.append(curr_node)
-                    continue
+                    circles = pole_circles
+                else:
+                    circles = pole_circles + gate_bar_circles
 
                 if len_sq > 1e-6:
                     earliest = 1.0
@@ -709,24 +690,11 @@ class CorridorController(Controller):
         self._prev_pos = None
 
     def render_callback(self, sim: Sim) -> None:
-        """Visualize the current trajectory, control points, and skeleton.
+        """Draw the planned spline trajectory.
 
         Args:
             sim: Active simulator instance.
         """
         if not hasattr(self, "_des_pos_spline"):
             return
-        u = (
-            min(self._spline_tick / self._freq, self._t_total) / self._t_total
-            if self._t_total > 0
-            else 0.0
-        )
-        draw_points(
-            sim, self._des_pos_spline(u).reshape(1, -1), rgba=(1.0, 0.0, 0.0, 1.0), size=0.04
-        )
         draw_line(sim, self._des_pos_spline(np.linspace(0.0, 1.0, 100)), rgba=(0.0, 1.0, 0.0, 1.0))
-        if hasattr(self, "_control_points") and len(self._control_points) > 0:
-            draw_points(sim, self._control_points, rgba=(0.0, 0.0, 1.0, 1.0), size=0.02)
-        if hasattr(self, "skeleton_path") and len(self.skeleton_path) > 0:
-            pts = np.array([p.pos for p in self.skeleton_path])
-            draw_line(sim, pts, rgba=(1.0, 1.0, 0.0, 1.0))
