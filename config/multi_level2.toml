@@ -4,7 +4,7 @@
 # | :-----------------: | :-----------------------: | :-------------------------: | :--------------------: | :---------------: |
 # | `level0.toml`       | *No*                      | *No*                        | *No*                   | Perfect knowledge |
 [[controller]]
-file = "state_controller.py" # Put your controller file name here. Specifying a controller as argument to scripts will override this setting. Controllers are located in `lsy_drone_racing/control/`
+file = "corridor_controller.py" # Put your controller file name here. Specifying a controller as argument to scripts will override this setting. Controllers are located in `lsy_drone_racing/control/`
 [[controller]]
 file = "attitude_controller.py"
 
@@ -57,7 +57,7 @@ control_mode = "state"  # Control mode of the environment. Can be either "state"
 [[env.kwargs]]
 freq = 100
 sensor_range = 0.7
-control_mode = "attitude"
+control_mode = "state"
 
 [env.track]
 # Full track radomization. When activated, the position (x & y) and orientation (yaw) 
