@@ -22,7 +22,7 @@ classifiers = [
 ########################
 # Pip Dependencies
 ########################
-dependencies = ["fire >= 0.6.0", "numpy", "toml >= 0.10.2"]
+dependencies = ["fire >= 0.6.0", "numpy", "toml >= 0.10.2", "cvxpy"]
 
 [project.optional-dependencies]
 # option[sim]: basic simulation
