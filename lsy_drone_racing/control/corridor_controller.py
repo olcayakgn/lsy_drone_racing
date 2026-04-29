@@ -42,11 +42,7 @@ class GateTransition(NamedTuple):
 
 # Per-gate transition template for the level2 track (4 gates, fixed order).
 LEVEL2_TRANSITIONS: tuple[GateTransition, ...] = (
-    GateTransition(
-        0.0,
-        ((0.45, 0.0, 0.0), (1.45, 0.0, 0.0), (0.75, 1.0, 0.0)),
-        None,
-    ),
+    GateTransition(0.0, ((0.45, 0.0, 0.0), (1.45, 0.0, 0.0), (0.75, 1.0, 0.0)), None),
     # Gate 1: straight pass-through, default post-anchor.
     GateTransition(0.0, (), None),
     # Gate 3 (1-indexed): hairpin out toward gate 4. The climb from gate-3
@@ -66,12 +62,7 @@ LEVEL2_TRANSITIONS: tuple[GateTransition, ...] = (
     # also clears the bar's top hemisphere.
     GateTransition(
         0.0,
-        (
-            (0.12, 0.0, 0.0),
-            (0.60, 0.40, 0.0),
-            (0.45, 0.50, 0.65),
-            (0.10, 0.55, 0.55),
-        ),
+        ((0.12, 0.0, 0.0), (0.60, 0.40, 0.0), (0.45, 0.50, 0.65), (0.10, 0.55, 0.55)),
         (-0.35, 0.30, 0.10),
     ),
     # Gate 3: terminal pass-through.
@@ -328,8 +319,7 @@ class CorridorController(Controller):
                 # through; otherwise the corridor would shrink to nothing. The
                 # skeleton is already routed cleanly through the gate opening.
                 if cap.is_gate and (
-                    np.linalg.norm(cap.a - n0.pos) < 1.0
-                    or np.linalg.norm(cap.a - n1.pos) < 1.0
+                    np.linalg.norm(cap.a - n0.pos) < 1.0 or np.linalg.norm(cap.a - n1.pos) < 1.0
                 ):
                     continue
 
@@ -356,10 +346,7 @@ class CorridorController(Controller):
         return hulls
 
     def _solve_qp(
-        self,
-        skeleton: list[WayNode],
-        corridors: list[ConvexHull],
-        vel_now: NDArray,
+        self, skeleton: list[WayNode], corridors: list[ConvexHull], vel_now: NDArray
     ) -> NDArray:
         """Solve the convex QP for B-spline control points inside the corridors."""
         n_seg = len(corridors)
@@ -445,11 +432,7 @@ class CorridorController(Controller):
                 # Skipped when either side is authored off-axis (override pre-anchor
                 # or exit-detour) — symmetry would mirror the off-axis design onto
                 # the other side and fight the intended geometry.
-                if (
-                    not (pre_authored or post_authored)
-                    and 0 <= gi - 1
-                    and gi + 1 < n_ctrl
-                ):
+                if not (pre_authored or post_authored) and 0 <= gi - 1 and gi + 1 < n_ctrl:
                     cons.append(P[gi - 1] + P[gi + 1] == 2 * P[gi])
 
                 # Pull approach control point onto the gate normal axis,
@@ -623,8 +606,7 @@ class CorridorController(Controller):
 
         new_obs = obs.get("obstacles_pos", np.array([]))
         if len(new_obs) != len(self.obstacles_pos) or (
-            len(new_obs) > 0
-            and np.max(np.linalg.norm(new_obs - self.obstacles_pos, axis=1)) > 0.05
+            len(new_obs) > 0 and np.max(np.linalg.norm(new_obs - self.obstacles_pos, axis=1)) > 0.05
         ):
             self.obstacles_pos = new_obs.copy()
             moved = True
@@ -655,7 +637,7 @@ class CorridorController(Controller):
 
         pos = self._des_pos_spline(u)
         vel = self._des_pos_spline.derivative(nu=1)(u) * du
-        acc = self._des_pos_spline.derivative(nu=2)(u) * (du ** 2)
+        acc = self._des_pos_spline.derivative(nu=2)(u) * (du**2)
 
         yaw = np.arctan2(vel[1], vel[0]) if np.linalg.norm(vel[:2]) > 0.1 else 0.0
 
