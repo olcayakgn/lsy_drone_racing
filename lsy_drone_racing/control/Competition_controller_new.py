@@ -39,7 +39,7 @@ class CompetitionController(Controller):
     )
 
     # time budget per leg (seconds)
-    LEG_DURATIONS = np.array([2.4, 2.3, 2.3, 2.1])
+    LEG_DURATIONS = np.array([2.4, 2.3, 2.3, 1.6])
     DODGE_LIMIT = 5
     SAFE_RADIUS = 0.15
     PROBE_DENSITY = 35
