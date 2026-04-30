@@ -3,7 +3,7 @@
 Attempts to fly through four gates in sequence using cubic spline interpolation
 for smooth trajectory generation.  PID tracking converts position / velocity
 errors into attitude + thrust commands.  Obstacle proximity triggers recursive
-waypoint insertion until a safe path is found.
+waypoint insertion until a safe path is found. 
 
 Tuned for Level 2 (randomised inertia + gate / obstacle positions).
 """
