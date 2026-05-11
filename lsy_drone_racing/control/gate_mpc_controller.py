@@ -1,11 +1,25 @@
 """Gate-target MPC drone racing controller.
 
+v5 changes compared with the previous version:
+  - Fixed gate-normal flipping near the gate plane by caching one planning frame
+    per gate. The current gate no longer changes approach direction when the
+    drone is close to or slightly past the plane.
+  - Removed the nonconvex near-hard gate-frame bar constraints from the active
+    OCP constraints. The gate is protected by the local-y/local-z funnel/opening
+    constraints instead. This avoids the SQP-RTI linearization wall that can make
+    the drone hover before gate 0.
+  - Added reference-trajectory warm starting. SQP-RTI now linearizes around the
+    intended route instead of around a stale hovering solution.
+  - Added a small gate-progress acceleration when the drone is already in the
+    gate corridor. This prevents hesitation directly before the gate.
+  - Kept obstacle constraints soft but expensive, with less over-inflation so the
+    first gate remains feasible.
+
 Architecture:
   The MPC IS the planner. No trajectory planner needed.
-  - Reference: gate center/current gate corridor
-  - Velocity reference: direction toward gate, scaled by desired speed
+  - Reference: route through current gate and, when visible in horizon, next gate
+  - Velocity reference: tangent to the chosen route, not simply toward gate center
   - MPC optimizes the path considering drone dynamics + obstacle/gate constraints
-  - Linearly interpolate reference from current position to gate for smooth guidance
 
 Important modeling convention:
   State: [pos(3), vel(3), u_prev(3)] = 9
@@ -20,10 +34,6 @@ Important modeling convention:
   Hover is:
       u = [0, 0, 9.81]
 
-  The attitude converter must preserve the desired vertical component after
-  roll/pitch clipping. Otherwise large horizontal accelerations create too much
-  upward thrust and the drone climbs at launch/turns.
-
 Requires:
   - acados
   - MinGW-w64 in PATH on Windows
@@ -33,7 +43,6 @@ from __future__ import annotations
 
 import math
 import os
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -76,25 +85,22 @@ _N_GATE_POST_SLOTS = 4
 _TOTAL_CYL = _N_OBS_SLOTS + _N_GATE_POST_SLOTS
 _NH = _TOTAL_CYL + 2
 _N_PARAMS = _TOTAL_CYL * 2 + 3 + 9
+
 _GATE_FRAME_OUTER_HALF_MPC = 0.28
+_CONSTRAINT_OFF = 1.0e6
 
 
 def _create_mpc_model() -> AcadosModel:
     """Double-integrator with parametric obstacle/gate constraints.
-
-    State:
-        [pos(3), vel(3), u_prev(3)]
-
-    Control:
-        world-frame specific thrust [ax, ay, az]
 
     Constraint order:
         0 .. _N_OBS_SLOTS-1:
             vertical pole / obstacle cylinders in world XY
 
         _N_OBS_SLOTS .. _TOTAL_CYL-1:
-            four gate-frame bars in gate-local coordinates:
-              left side, right side, top, bottom
+            gate-frame bar expressions. In v5 these are normally disabled in
+            the OCP bounds because their nonconvex SQP-RTI linearization can
+            form an artificial wall in front of the active gate.
 
         _TOTAL_CYL:
             gate-local y opening/funnel coordinate
@@ -141,20 +147,15 @@ def _create_mpc_model() -> AcadosModel:
     ri = gi + 3
     dx, dy, dz = px - gx, py - gy, pz - gz
 
-    # R is stored row-major.
-    # local = R.T @ (p_world - gate_center)
+    # R is stored row-major. local = R.T @ (p_world - gate_center).
     p_local_x = p[ri + 0] * dx + p[ri + 3] * dy + p[ri + 6] * dz
     p_local_y = p[ri + 1] * dx + p[ri + 4] * dy + p[ri + 7] * dz
     p_local_z = p[ri + 2] * dx + p[ri + 5] * dy + p[ri + 8] * dz
 
     oh = _GATE_FRAME_OUTER_HALF_MPC
 
-    # Gate-frame bars.
-    #
-    # Side bars: cylinders along local z, distance in local x/y.
-    # Top/bottom bars: cylinders along local y, distance in local x/z.
-    #
-    # This is conservative but much better than four world-XY corner cylinders.
+    # Gate-frame bars. These expressions are retained so the constraint layout
+    # remains unchanged, but v5 disables their bounds by default.
     h_list.append(p_local_x ** 2 + (p_local_y - oh) ** 2)
     h_list.append(p_local_x ** 2 + (p_local_y + oh) ** 2)
     h_list.append(p_local_x ** 2 + (p_local_z - oh) ** 2)
@@ -167,7 +168,7 @@ def _create_mpc_model() -> AcadosModel:
     con_h_expr = cs.vertcat(*h_list)
 
     model = AcadosModel()
-    model.name = "gate_mpc_frame_safe_v4"
+    model.name = "gate_mpc_progress_safe_v5"
     model.x = x
     model.u = u
     model.p = p
@@ -184,9 +185,9 @@ def _create_mpc_solver(
     mass: float,
     thrust_min: float,
     thrust_max: float,
-    obstacle_radius: float = 0.25,
+    obstacle_radius: float = 0.30,
     gate_half_opening: float = 0.16,
-    gate_post_radius: float = 0.12,
+    gate_post_radius: float = 0.115,
     max_tilt_mpc: float = 0.45,
     az_up_max: float = 1.25,
     az_down_max: float = 1.75,
@@ -206,8 +207,8 @@ def _create_mpc_solver(
     ocp.cost.cost_type_e = "LINEAR_LS"
 
     Q_base = np.diag([
-        100.0, 100.0, 70.0,
-        65.0, 65.0, 90.0,
+        95.0, 95.0, 70.0,
+        70.0, 70.0, 90.0,
         0.2, 0.2, 0.4,
     ])
 
@@ -218,8 +219,8 @@ def _create_mpc_solver(
     ])
 
     Q_e = np.diag([
-        100.0, 100.0, 70.0,
-        50.0, 50.0, 80.0,
+        120.0, 120.0, 80.0,
+        65.0, 65.0, 90.0,
         0.1, 0.1, 0.2,
     ])
 
@@ -243,19 +244,10 @@ def _create_mpc_solver(
     thrust_acc_min = thrust_min / mass
     thrust_acc_max = thrust_max / mass
 
-    # Key altitude fix:
-    # Do not let MPC request vertical thrust far above hover at launch.
-    # u_z is specific thrust, so hover is g.
     a_min_z = max(thrust_acc_min, g - az_down_max)
     a_max_z = min(thrust_acc_max, g + az_up_max)
 
-    # Key lateral fix:
-    # Make the MPC horizontal acceleration limit consistent with the attitude
-    # command tilt limit. Otherwise the MPC asks for lateral acceleration that
-    # the clipped attitude controller cannot realize.
-    a_max_xy_by_tilt = g * math.tan(max_tilt_mpc)
-    a_max_xy_by_thrust = max(0.1, math.sqrt(max(a_max_z ** 2 - g ** 2, 0.0)))
-    a_max_xy = min(a_max_xy_by_tilt, max(a_max_xy_by_thrust, a_max_xy_by_tilt))
+    a_max_xy = g * math.tan(max_tilt_mpc)
 
     ocp.constraints.lbu = np.array([-a_max_xy, -a_max_xy, a_min_z])
     ocp.constraints.ubu = np.array([a_max_xy, a_max_xy, a_max_z])
@@ -264,19 +256,20 @@ def _create_mpc_solver(
     ocp.constraints.x0 = np.zeros(nx)
 
     r_sq = obstacle_radius ** 2
-    r_sq_post = gate_post_radius ** 2
 
     lh = np.zeros(nh)
     uh = np.zeros(nh)
 
     lh[:_N_OBS_SLOTS] = r_sq
-    uh[:_N_OBS_SLOTS] = 1e6
+    uh[:_N_OBS_SLOTS] = _CONSTRAINT_OFF
 
-    lh[_N_OBS_SLOTS:_TOTAL_CYL] = r_sq_post
-    uh[_N_OBS_SLOTS:_TOTAL_CYL] = 1e6
+    # Gate-frame bar bounds are disabled in v5. The active gate is protected by
+    # the funnel/opening constraints below. This avoids artificial SQP-RTI walls.
+    lh[_N_OBS_SLOTS:_TOTAL_CYL] = -_CONSTRAINT_OFF
+    uh[_N_OBS_SLOTS:_TOTAL_CYL] = _CONSTRAINT_OFF
 
-    lh[_TOTAL_CYL:] = -1000.0
-    uh[_TOTAL_CYL:] = 1000.0
+    lh[_TOTAL_CYL:] = -_CONSTRAINT_OFF
+    uh[_TOTAL_CYL:] = _CONSTRAINT_OFF
 
     ocp.constraints.lh = lh
     ocp.constraints.uh = uh
@@ -284,29 +277,21 @@ def _create_mpc_solver(
 
     zl = np.zeros(nh)
     zu = np.zeros(nh)
-
-
-    # Lower-bound slacks:
-    #   obstacle/frame constraints are h >= radius^2
-    #
-    # These numbers are intentionally much larger than the tracking weights.
-    # The MPC may still violate them if it is truly stuck, but it should no
-    # longer choose a shortcut through a pole/frame just because it is cheaper.
-    zl[:_N_OBS_SLOTS] = 2.0e4
-    zl[_N_OBS_SLOTS:_TOTAL_CYL] = 4.0e4
-    zl[_TOTAL_CYL:] = 1.5e4
-
-    # Upper-bound slacks only matter for the gate opening/funnel constraints.
-    zu[_TOTAL_CYL:] = 1.5e4
-
     Zl = np.zeros(nh)
     Zu = np.zeros(nh)
 
-    Zl[:_N_OBS_SLOTS] = 2.0e5
-    Zl[_N_OBS_SLOTS:_TOTAL_CYL] = 4.0e5
-    Zl[_TOTAL_CYL:] = 1.0e5
+    # Obstacle cylinders: expensive but not so huge that the solver chooses to
+    # hover when a first-gate corridor is tight.
+    zl[:_N_OBS_SLOTS] = 8.0e3
+    Zl[:_N_OBS_SLOTS] = 8.0e4
 
-    Zu[_TOTAL_CYL:] = 1.0e5
+    # Gate opening/funnel: strong guidance, but softer than obstacle avoidance.
+    # If the drone is slightly misaligned, it should still pass through rather
+    # than freeze in front of the gate.
+    zl[_TOTAL_CYL:] = 2.5e3
+    zu[_TOTAL_CYL:] = 2.5e3
+    Zl[_TOTAL_CYL:] = 2.5e4
+    Zu[_TOTAL_CYL:] = 2.5e4
 
     ocp.cost.zl = zl
     ocp.cost.zu = zu
@@ -341,7 +326,7 @@ def _create_mpc_solver(
     ocp.solver_options.tol = 1e-4
     ocp.solver_options.qp_solver_cond_N = min(N, 10)
     ocp.solver_options.qp_solver_warm_start = 1
-    ocp.solver_options.qp_solver_iter_max = 20
+    ocp.solver_options.qp_solver_iter_max = 30
     ocp.solver_options.nlp_solver_max_iter = 1
     ocp.solver_options.tf = dt * N
 
@@ -350,13 +335,13 @@ def _create_mpc_solver(
 
     solver = AcadosOcpSolver(
         ocp,
-        json_file=str(code_dir / "gate_mpc_altitude_safe_v4.json"),
+        json_file=str(code_dir / "gate_mpc_progress_safe_v5.json"),
         verbose=False,
         build=True,
         generate=True,
     )
 
-    gamma = 0.95
+    gamma = 0.96
     weights = np.array([gamma ** i for i in range(N)])
     weights *= N / weights.sum()
 
@@ -376,12 +361,7 @@ def _vertical_preserving_thrust(
     thrust_min: float,
     thrust_max: float,
 ) -> float:
-    """Compute thrust so vertical component equals desired world z specific thrust.
-
-    If the attitude is clipped, using mass * norm(a_cmd) is wrong because the
-    drone cannot tilt enough to use that thrust horizontally. This function keeps
-    the vertical component under control.
-    """
+    """Compute thrust so vertical component equals desired world z specific thrust."""
     c = math.cos(roll) * math.cos(pitch)
     c = max(c, 0.25)
 
@@ -399,20 +379,7 @@ def accel_to_attitude(
     thrust_min: float,
     thrust_max: float,
 ) -> np.ndarray:
-    """Convert world-frame specific thrust vector to attitude + total thrust.
-
-    a_cmd is not inertial acceleration. It is the desired specific thrust vector.
-    Hover is [0, 0, 9.81].
-
-    Important fix:
-      1. Compute desired roll/pitch from a_cmd.
-      2. Clip roll/pitch.
-      3. Recompute thrust to preserve a_cmd[2].
-
-    This prevents the launch/turn climb caused by:
-        thrust = mass * norm(a_cmd)
-    combined with clipped roll/pitch.
-    """
+    """Convert world-frame specific thrust vector to attitude + total thrust."""
     a_vec = np.asarray(a_cmd, dtype=np.float64).copy()
     a_vec[2] = max(float(a_vec[2]), 0.1)
 
@@ -451,44 +418,41 @@ class PMMRacingController(Controller):
     """Gate-target MPC controller for drone racing."""
 
     OBSTACLE_RADIUS = 0.25
-    OBSTACLE_MPC_MARGIN = 0.10
+    OBSTACLE_MPC_MARGIN = 0.05
     OBSTACLE_ROUTE_MARGIN = 0.14
 
     GATE_HALF_OPENING = 0.16
     GATE_OUTER_HALF = _GATE_FRAME_OUTER_HALF_MPC
-
-    # Slightly below 0.12 because:
-    #   GATE_OUTER_HALF - GATE_HALF_OPENING = 0.12
-    # If this equals exactly 0.12, the opening constraint and frame constraint
-    # touch numerically at the aperture edge.
     GATE_POST_RADIUS = 0.115
 
-    FUNNEL_LENGTH = 0.75
+    FUNNEL_LENGTH = 0.60
     FUNNEL_OUTER_HALF = 0.42
 
     APPROACH_DIST = 0.50
-    APPROACH_DIST_MIN = 0.18
-    EXIT_DIST = 0.30
+    APPROACH_DIST_MIN = 0.12
+    EXIT_DIST = 0.34
 
     ROUTE_DETOUR_EXTRA = 0.18
 
     GROUND_CLEARANCE = 0.10
     CEILING = 1.80
 
-    V_CRUISE = 1.25
-    V_GATE = 0.85
+    V_CRUISE = 1.30
+    V_GATE = 0.95
 
     MPC_N = 50
     MPC_DT = 0.05
 
-    APF_INFLUENCE = 0.60
-    APF_GAIN = 0.22
-    APF_MAX = 1.20
+    APF_INFLUENCE = 0.55
+    APF_GAIN = 0.20
+    APF_MAX = 0.95
+
+    GATE_PUSH_DIST = 0.80
+    GATE_PUSH_GAIN = 1.35
+    GATE_PUSH_MAX = 1.10
 
     ALIGN_START_DIST = 1.20
 
-    # Altitude/actuator consistency parameters.
-    # These are the main anti-launch-climb fixes.
     MAX_TILT_CMD = 0.50
     MAX_TILT_MPC = 0.45
 
@@ -496,8 +460,8 @@ class PMMRacingController(Controller):
     AZ_DOWN_MAX = 1.75
 
     VZ_REF_MAX = 0.40
-    LAUNCH_HOLD_TIME = 0.25
-    LAUNCH_BLEND_TIME = 0.70
+    LAUNCH_HOLD_TIME = 0.20
+    LAUNCH_BLEND_TIME = 0.55
 
     Z_HOLD_KP = 2.8
     Z_HOLD_KD = 2.0
@@ -520,6 +484,10 @@ class PMMRacingController(Controller):
 
         self._n_gates = len(self._gate_positions)
         self._target_gate = int(obs["target_gate"])
+
+        self._initial_pos = np.asarray(obs["pos"], dtype=np.float64).copy()
+        self._gate_plan_rotmats: list[np.ndarray] = []
+        self._refresh_gate_frames()
 
         self._obstacle_positions = np.array(
             [g.tolist() for g in obs["obstacles_pos"]],
@@ -570,36 +538,52 @@ class PMMRacingController(Controller):
 
         self._launch_z: float | None = None
         self._last_pos = np.zeros(3, dtype=np.float64)
+        self._last_ref_pos: np.ndarray | None = None
 
-    def _get_gate_normal(self, gi: int, from_pos: np.ndarray) -> np.ndarray:
-        """Get gate normal pointing from from_pos toward gate."""
-        normal = self._gate_rotmats[gi][:, 0].copy()
-        to_gate = self._gate_positions[gi] - from_pos
+    def _refresh_gate_frames(self) -> None:
+        """Cache one planning frame per gate.
 
-        if np.dot(to_gate, normal) < 0:
-            normal = -normal
-
-        return normal
-
-    def _get_gate_frame(self, gi: int, from_pos: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Return gate normal and basis with local x pointing from from_pos to gate.
-
-        Important:
-        The raw gate rotation may point either way through the gate.
-        For planning, local +x should mean 'through the gate from the current
-        approach side'. This also makes the current/next gate switching logic
-        consistent.
+        The previous dynamic normal selection flipped direction after crossing
+        the gate plane if the environment had not marked the gate as visited yet.
+        That made the controller point back toward gate 0 and hover/oscillate.
         """
-        R = self._gate_rotmats[gi].copy()
-        normal = R[:, 0].copy()
+        self._gate_plan_rotmats = []
 
-        to_gate = self._gate_positions[gi] - from_pos
+        for gi in range(self._n_gates):
+            R = self._gate_rotmats[gi].copy()
+            normal = R[:, 0].copy()
 
-        if float(np.dot(to_gate, normal)) < 0.0:
-            normal *= -1.0
-            R[:, 0] = normal
+            if gi == 0:
+                from_ref = self._initial_pos
+            else:
+                prev_R = self._gate_plan_rotmats[gi - 1]
+                from_ref = self._gate_positions[gi - 1] + self.EXIT_DIST * prev_R[:, 0]
 
-        return normal, R
+            to_gate = self._gate_positions[gi] - from_ref
+
+            if float(np.dot(to_gate, normal)) < 0.0:
+                R[:, 0] = -normal
+
+            self._gate_plan_rotmats.append(R)
+
+    def _get_gate_normal(self, gi: int, from_pos: np.ndarray | None = None) -> np.ndarray:
+        """Get the cached planning normal for a gate."""
+        del from_pos
+        if 0 <= gi < len(self._gate_plan_rotmats):
+            return self._gate_plan_rotmats[gi][:, 0].copy()
+        return self._gate_rotmats[gi][:, 0].copy()
+
+    def _get_gate_frame(self, gi: int, from_pos: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
+        """Return cached gate normal and planning frame.
+
+        from_pos is accepted for compatibility but intentionally ignored.
+        """
+        del from_pos
+        if 0 <= gi < len(self._gate_plan_rotmats):
+            R = self._gate_plan_rotmats[gi].copy()
+        else:
+            R = self._gate_rotmats[gi].copy()
+        return R[:, 0].copy(), R
 
     @staticmethod
     def _append_waypoint(
@@ -644,11 +628,7 @@ class PMMRacingController(Controller):
         b: np.ndarray,
         clearance: float | None = None,
     ) -> tuple[np.ndarray, float, float] | None:
-        """Find the first obstacle that blocks segment a-b in XY.
-
-        Returns:
-            (obstacle_position, distance_to_segment, segment_parameter_t)
-        """
+        """Find the first obstacle that blocks segment a-b in XY."""
         if len(self._obstacle_positions) == 0:
             return None
 
@@ -656,14 +636,11 @@ class PMMRacingController(Controller):
             clearance = self.OBSTACLE_RADIUS + self.OBSTACLE_ROUTE_MARGIN
 
         clearance = float(clearance)
-
         best: tuple[np.ndarray, float, float] | None = None
 
         for op in self._obstacle_positions:
             d, t, _ = self._segment_distance_xy(a, b, op)
 
-            # Ignore exact endpoints. Those cases are usually handled by the
-            # next segment or by the MPC/APF layer.
             if 0.03 < t < 0.97 and d < clearance:
                 if best is None or t < best[2]:
                     best = (op.copy(), d, t)
@@ -697,7 +674,6 @@ class PMMRacingController(Controller):
         z = float(np.clip(z, self.GROUND_CLEARANCE + 0.05, self.CEILING - 0.05))
 
         offset = float(clearance + self.ROUTE_DETOUR_EXTRA)
-
         candidates: list[tuple[float, np.ndarray]] = []
 
         for side in (-1.0, 1.0):
@@ -706,10 +682,7 @@ class PMMRacingController(Controller):
 
             score = float(np.linalg.norm(cand - a) + np.linalg.norm(b - cand))
 
-            # Penalize candidates whose two connecting segments still pass too
-            # close to any obstacle.
             min_clear = 1e9
-
             for other in self._obstacle_positions:
                 d1, _, _ = self._segment_distance_xy(a, cand, other)
                 d2, _, _ = self._segment_distance_xy(cand, b, other)
@@ -774,11 +747,11 @@ class PMMRacingController(Controller):
     ) -> np.ndarray:
         """Choose a gate approach point.
 
-        If the long straight approach corridor is clear, use it.
-        If a pole blocks the final straight approach, shorten the straight
-        alignment distance. This prevents the controller from insisting on a
-        long straight line through a pole.
+        Use a straight approach when the corridor is clear. If a pole blocks the
+        long final approach, shorten the approach so the route can go around the
+        pole first and still enter the gate from the correct side.
         """
+        del from_pos
         gp = self._gate_positions[gi]
 
         approach_distances = [
@@ -788,9 +761,7 @@ class PMMRacingController(Controller):
             self.APPROACH_DIST_MIN,
         ]
 
-        # Slightly smaller than the route clearance. This test answers:
-        # "Can I fly the final straight gate approach without clipping a pole?"
-        approach_clearance = self.OBSTACLE_RADIUS + 0.05
+        approach_clearance = self.OBSTACLE_RADIUS + 0.045
 
         for d in approach_distances:
             d = max(float(d), self.APPROACH_DIST_MIN)
@@ -810,15 +781,11 @@ class PMMRacingController(Controller):
         pos: np.ndarray,
         ref_pos: np.ndarray,
     ) -> np.ndarray:
-        """Pick the obstacle slots that matter for the current MPC horizon.
-
-        The old code used the first four obstacles. If the important pole is not
-        among those first four, the MPC literally has no constraint for it.
-        """
+        """Pick the obstacle slots that matter for the current MPC horizon."""
         if len(self._obstacle_positions) == 0:
             return np.zeros((0, 3), dtype=np.float64)
 
-        sample_count = min(12, len(ref_pos))
+        sample_count = min(14, len(ref_pos))
         sample_idx = np.linspace(0, len(ref_pos) - 1, sample_count, dtype=int)
         samples_xy = ref_pos[sample_idx, :2]
 
@@ -827,8 +794,6 @@ class PMMRacingController(Controller):
         for oi, op in enumerate(self._obstacle_positions):
             d_now = float(np.linalg.norm(pos[:2] - op[:2]))
             d_path = float(np.min(np.linalg.norm(samples_xy - op[:2], axis=1)))
-
-            # Tiny tie-breaker keeps ordering deterministic.
             scores.append((min(d_now, d_path) + 1e-3 * oi, oi))
 
         order = [oi for _, oi in sorted(scores)[:_N_OBS_SLOTS]]
@@ -836,12 +801,7 @@ class PMMRacingController(Controller):
         return self._obstacle_positions[order].copy()
 
     def _avoidance_accel(self, pos: np.ndarray, vel: np.ndarray) -> np.ndarray:
-        """Acceleration-level local collision avoidance.
-
-        This replaces the old post-attitude APF. Applying avoidance directly to
-        u0 is cleaner because u0 is already a world-frame acceleration/specific
-        thrust command.
-        """
+        """Acceleration-level local collision avoidance for poles."""
         acc = np.zeros(3, dtype=np.float64)
 
         if len(self._obstacle_positions) == 0:
@@ -855,12 +815,10 @@ class PMMRacingController(Controller):
                 continue
 
             away = diff / d
-
-            # Positive when moving toward the obstacle.
             closing_speed = max(0.0, -float(np.dot(vel[:2], away)))
 
             barrier = self.APF_GAIN * (1.0 / d - 1.0 / self.APF_INFLUENCE) / (d * d)
-            mag = min(barrier + 0.8 * closing_speed, self.APF_MAX)
+            mag = min(barrier + 0.65 * closing_speed, self.APF_MAX)
 
             acc[:2] += mag * away
 
@@ -871,12 +829,50 @@ class PMMRacingController(Controller):
 
         return acc
 
-    def _apply_launch_altitude_ramp(self, ref_pos: np.ndarray, ref_vel: np.ndarray) -> None:
-        """Prevent the first MPC horizon from immediately pulling upward.
+    def _gate_progress_accel(self, pos: np.ndarray, vel: np.ndarray) -> np.ndarray:
+        """Small acceleration along the gate normal when already in the corridor."""
+        acc = np.zeros(3, dtype=np.float64)
 
-        The MPC is allowed to climb, but the reference altitude is ramped from the
-        launch altitude instead of jumping toward future gate altitude at t=0.
-        """
+        if not (0 <= self._target_gate < self._n_gates):
+            return acc
+
+        gp = self._gate_positions[self._target_gate]
+        normal, R = self._get_gate_frame(self._target_gate)
+        local = R.T @ (pos - gp)
+
+        # Only help when near the active gate and approximately inside the
+        # broad funnel. Outside this region, the route planner and obstacle
+        # avoidance should decide the path.
+        if local[0] > self.EXIT_DIST:
+            return acc
+
+        if abs(float(local[0])) > self.GATE_PUSH_DIST:
+            return acc
+
+        if abs(float(local[1])) > self.FUNNEL_OUTER_HALF + 0.08:
+            return acc
+
+        if abs(float(local[2])) > self.FUNNEL_OUTER_HALF + 0.08:
+            return acc
+
+        nxy = normal.copy()
+        nxy[2] = 0.0
+        nxy_norm = float(np.linalg.norm(nxy))
+
+        if nxy_norm < _EPS:
+            return acc
+
+        nxy /= nxy_norm
+
+        vn = float(np.dot(vel[:2], nxy[:2]))
+        desired_vn = self.V_GATE
+        mag = float(np.clip(self.GATE_PUSH_GAIN * (desired_vn - vn), 0.0, self.GATE_PUSH_MAX))
+
+        acc[:2] = mag * nxy[:2]
+        return acc
+
+    def _apply_launch_altitude_ramp(self, ref_pos: np.ndarray, ref_vel: np.ndarray) -> None:
+        """Prevent the first MPC horizon from immediately pulling upward."""
         if self._launch_z is None:
             return
 
@@ -891,16 +887,14 @@ class PMMRacingController(Controller):
 
             ref_pos[i, 2] = float(np.clip(ref_pos[i, 2], z_low, z_high))
             ref_pos[i, 2] = float(np.clip(ref_pos[i, 2], self.GROUND_CLEARANCE, self.CEILING))
-
             ref_vel[i, 2] = float(np.clip(ref_vel[i, 2], -self.VZ_REF_MAX, self.VZ_REF_MAX))
 
     def _generate_references(self, pos: np.ndarray, vel: np.ndarray):
         """Generate MPC reference positions and velocities.
 
-        Key change:
-        The path can contain detour waypoints. Therefore the velocity reference
-        must follow the current route segment. If velocity always points directly
-        to the gate center, the MPC cuts the corner and tries to go through poles.
+        The velocity reference follows the route tangent. Near or just after the
+        current gate plane, the route targets the exit point instead of turning
+        back to the gate center.
         """
         ref_pos = np.zeros((self.MPC_N + 1, 3), dtype=np.float64)
         ref_vel = np.zeros((self.MPC_N + 1, 3), dtype=np.float64)
@@ -910,47 +904,53 @@ class PMMRacingController(Controller):
             return ref_pos, ref_vel
 
         gp = self._gate_positions[self._target_gate]
-        normal, _ = self._get_gate_frame(self._target_gate, pos)
+        normal, R_gate = self._get_gate_frame(self._target_gate)
+        local_pos = R_gate.T @ (pos - gp)
 
         approach_pt = self._choose_approach_point(self._target_gate, pos, normal)
         exit_pt = gp + self.EXIT_DIST * normal
 
         waypoints: list[np.ndarray] = [pos.copy()]
-
         route_clearance = self.OBSTACLE_RADIUS + self.OBSTACLE_ROUTE_MARGIN
 
-        dist_to_gate = float(np.linalg.norm(pos - gp))
+        before_gate = float(local_pos[0]) < -0.06
+        still_need_exit = float(local_pos[0]) < 1.20 * self.EXIT_DIST
 
-        if dist_to_gate > self.APPROACH_DIST_MIN * 1.3:
+        if before_gate:
+            dist_to_approach = float(np.linalg.norm(pos - approach_pt))
+
+            if dist_to_approach > 0.12:
+                self._append_clear_segment(
+                    waypoints,
+                    approach_pt,
+                    clearance=route_clearance,
+                    max_detours=2,
+                )
+
+            # Final pass through gate. The chosen approach point should make this
+            # segment clear. Do not detour here, otherwise the controller can cut
+            # into the frame.
             self._append_clear_segment(
                 waypoints,
-                approach_pt,
+                gp.copy(),
                 clearance=route_clearance,
-                max_detours=2,
+                max_detours=0,
             )
 
-        # Final gate pass should not detour around the gate itself.
-        # If the final corridor is blocked, _choose_approach_point already
-        # shortened the alignment distance.
-        self._append_clear_segment(
-            waypoints,
-            gp.copy(),
-            clearance=route_clearance,
-            max_detours=0,
-        )
-        self._append_clear_segment(
-            waypoints,
-            exit_pt,
-            clearance=route_clearance,
-            max_detours=0,
-        )
+        if still_need_exit:
+            self._append_clear_segment(
+                waypoints,
+                exit_pt,
+                clearance=route_clearance,
+                max_detours=0,
+            )
 
         next_gate = self._target_gate + 1
         has_next = next_gate < self._n_gates
 
         if has_next:
             next_gp = self._gate_positions[next_gate]
-            next_normal, _ = self._get_gate_frame(next_gate, exit_pt)
+            next_normal, _ = self._get_gate_frame(next_gate)
             next_approach = self._choose_approach_point(next_gate, exit_pt, next_normal)
 
             self._append_clear_segment(
@@ -988,28 +988,23 @@ class PMMRacingController(Controller):
             return ref_pos, ref_vel
 
         speed_now = float(np.linalg.norm(vel))
-        avg_speed = min(self.V_CRUISE, max(0.45, 0.5 * (speed_now + self.V_CRUISE)))
+        avg_speed = min(self.V_CRUISE, max(0.65, 0.5 * (speed_now + self.V_CRUISE)))
 
-        # If we inserted extra detours, slow down slightly. This gives the MPC
-        # enough authority to make the turn instead of cutting through the pole.
-        nominal_wp_count = 4 + (2 if has_next else 0)
-
+        nominal_wp_count = 3 + (2 if has_next else 0)
         if len(waypoints_arr) > nominal_wp_count:
-            avg_speed = min(avg_speed, 1.05)
+            avg_speed = min(avg_speed, 1.10)
 
         for i in range(self.MPC_N + 1):
             t_hor = i * self.MPC_DT
             s = min(avg_speed * t_hor, total_dist)
 
             seg_idx = len(cum_dist) - 2
-
             for j in range(len(cum_dist) - 1):
                 if s <= cum_dist[j + 1] or j == len(cum_dist) - 2:
                     seg_idx = j
                     break
 
             seg_len = cum_dist[seg_idx + 1] - cum_dist[seg_idx]
-
             if seg_len > _EPS:
                 alpha = float(np.clip((s - cum_dist[seg_idx]) / seg_len, 0.0, 1.0))
             else:
@@ -1023,7 +1018,6 @@ class PMMRacingController(Controller):
 
             seg_vec = b - a
             seg_norm = float(np.linalg.norm(seg_vec))
-
             if seg_norm > _EPS:
                 route_dir = seg_vec / seg_norm
             else:
@@ -1031,9 +1025,7 @@ class PMMRacingController(Controller):
 
             speed_ref = self.V_CRUISE
 
-            # Slow near gates.
             near_gate_dist = float(np.linalg.norm(ref_pos[i] - gp))
-
             if has_next:
                 near_gate_dist = min(
                     near_gate_dist,
@@ -1042,12 +1034,8 @@ class PMMRacingController(Controller):
 
             if near_gate_dist < self.ALIGN_START_DIST:
                 beta = float(np.clip(near_gate_dist / self.ALIGN_START_DIST, 0.0, 1.0))
-                speed_ref = min(
-                    speed_ref,
-                    self.V_GATE + (self.V_CRUISE - self.V_GATE) * beta,
-                )
+                speed_ref = min(speed_ref, self.V_GATE + (self.V_CRUISE - self.V_GATE) * beta)
 
-            # Slow before sharp polyline corners.
             if seg_idx < len(waypoints_arr) - 2:
                 next_vec = waypoints_arr[seg_idx + 2] - waypoints_arr[seg_idx + 1]
                 next_norm = float(np.linalg.norm(next_vec))
@@ -1059,9 +1047,8 @@ class PMMRacingController(Controller):
                     turn_angle = math.acos(cos_turn)
 
                     corner_blend = 1.0 - remaining_to_corner / 0.55
-                    turn_factor = 1.0 - 0.40 * corner_blend * (turn_angle / math.pi)
-                    turn_factor = float(np.clip(turn_factor, 0.55, 1.0))
-
+                    turn_factor = 1.0 - 0.25 * corner_blend * (turn_angle / math.pi)
+                    turn_factor = float(np.clip(turn_factor, 0.70, 1.0))
                     speed_ref *= turn_factor
 
             ref_vel[i] = route_dir * speed_ref
@@ -1070,7 +1057,7 @@ class PMMRacingController(Controller):
         self._apply_launch_altitude_ramp(ref_pos, ref_vel)
 
         return ref_pos, ref_vel
-    
+
     def _limit_commanded_accel(self, u: np.ndarray) -> np.ndarray:
         """Final safety limit before converting acceleration to attitude."""
         u_limited = np.asarray(u, dtype=np.float64).copy()
@@ -1114,6 +1101,32 @@ class PMMRacingController(Controller):
 
         return u_guarded
 
+    def _warm_start_solver(self, x0: np.ndarray, ref_pos: np.ndarray, ref_vel: np.ndarray) -> None:
+        """Warm-start SQP-RTI around the intended route.
+
+        This is important for nonconvex obstacle constraints. Without this, the
+        RTI linearization can stay around an old hovering solution and block
+        progress through the first gate.
+        """
+        hover = np.array([0.0, 0.0, self._g], dtype=np.float64)
+
+        for i in range(self.MPC_N + 1):
+            if i == 0:
+                x_guess = x0.copy()
+            else:
+                x_guess = np.zeros(self._nx, dtype=np.float64)
+                x_guess[0:3] = ref_pos[i]
+                x_guess[3:6] = ref_vel[i]
+                x_guess[6:9] = hover
+
+            self._solver.set(i, "x", x_guess)
+
+        for i in range(self.MPC_N):
+            u_guess = hover.copy()
+            if i == 0:
+                u_guess = 0.65 * self._prev_accel + 0.35 * hover
+            self._solver.set(i, "u", self._limit_commanded_accel(u_guess))
+
     def compute_control(
         self,
         obs: dict[str, NDArray[np.floating]],
@@ -1152,9 +1165,7 @@ class PMMRacingController(Controller):
                 params[2 * oi] = 100.0
                 params[2 * oi + 1] = 100.0
 
-        # Legacy parameter slots for the old corner-cylinder gate model.
-        # The v4 model no longer uses these slots, but the parameter layout is
-        # kept unchanged to avoid touching the rest of the acados interface.
+        # Legacy slots for disabled gate-frame bar expressions.
         for pi in range(_N_OBS_SLOTS, _TOTAL_CYL):
             params[2 * pi] = 100.0
             params[2 * pi + 1] = 100.0
@@ -1163,7 +1174,7 @@ class PMMRacingController(Controller):
 
         if 0 <= self._target_gate < self._n_gates:
             gp_cur = self._gate_positions[self._target_gate]
-            _, R_cur = self._get_gate_frame(self._target_gate, pos)
+            _, R_cur = self._get_gate_frame(self._target_gate)
         else:
             gp_cur = np.array([100.0, 100.0, 100.0], dtype=np.float64)
             R_cur = np.eye(3)
@@ -1173,8 +1184,7 @@ class PMMRacingController(Controller):
 
         if has_next:
             gp_next = self._gate_positions[next_gate_idx]
-            from_next = gp_cur + self.EXIT_DIST * R_cur[:, 0]
-            _, R_next = self._get_gate_frame(next_gate_idx, from_next)
+            _, R_next = self._get_gate_frame(next_gate_idx)
         else:
             gp_next = None
             R_next = None
@@ -1184,18 +1194,6 @@ class PMMRacingController(Controller):
 
             if 0 <= self._target_gate < self._n_gates:
                 p_local_cur = R_cur.T @ (ref_pos[i] - gp_cur)
-
-                if p_local_cur[0] > self.EXIT_DIST and has_next:
-                    use_next = True
-
-            params_i = params.copy()
-
-        for i in range(self.MPC_N + 1):
-            use_next = False
-
-            if 0 <= self._target_gate < self._n_gates:
-                p_local_cur = R_cur.T @ (ref_pos[i] - gp_cur)
-
                 if p_local_cur[0] > self.EXIT_DIST and has_next:
                     use_next = True
 
@@ -1211,7 +1209,6 @@ class PMMRacingController(Controller):
             self._solver.set(i, "p", params_i)
 
         r_sq = (self.OBSTACLE_RADIUS + self.OBSTACLE_MPC_MARGIN) ** 2
-        r_sq_post = self.GATE_POST_RADIUS ** 2
         h_open = self.GATE_HALF_OPENING
 
         for i in range(1, self.MPC_N + 1):
@@ -1219,10 +1216,12 @@ class PMMRacingController(Controller):
             uh_i = np.zeros(self._nh, dtype=np.float64)
 
             lh_i[:_N_OBS_SLOTS] = r_sq
-            uh_i[:_N_OBS_SLOTS] = 1e6
+            uh_i[:_N_OBS_SLOTS] = _CONSTRAINT_OFF
 
-            lh_i[_N_OBS_SLOTS:_TOTAL_CYL] = r_sq_post
-            uh_i[_N_OBS_SLOTS:_TOTAL_CYL] = 1e6
+            # Disabled gate-frame bars. The active gate frame is handled by the
+            # convex-ish y/z funnel constraints below.
+            lh_i[_N_OBS_SLOTS:_TOTAL_CYL] = -_CONSTRAINT_OFF
+            uh_i[_N_OBS_SLOTS:_TOTAL_CYL] = _CONSTRAINT_OFF
 
             if 0 <= self._target_gate < self._n_gates:
                 p_local_cur = R_cur.T @ (ref_pos[i] - gp_cur)
@@ -1247,11 +1246,11 @@ class PMMRacingController(Controller):
                     lh_i[_TOTAL_CYL + 1] = -h_bound
                     uh_i[_TOTAL_CYL + 1] = h_bound
                 else:
-                    lh_i[_TOTAL_CYL:] = -1000.0
-                    uh_i[_TOTAL_CYL:] = 1000.0
+                    lh_i[_TOTAL_CYL:] = -_CONSTRAINT_OFF
+                    uh_i[_TOTAL_CYL:] = _CONSTRAINT_OFF
             else:
-                lh_i[_TOTAL_CYL:] = -1000.0
-                uh_i[_TOTAL_CYL:] = 1000.0
+                lh_i[_TOTAL_CYL:] = -_CONSTRAINT_OFF
+                uh_i[_TOTAL_CYL:] = _CONSTRAINT_OFF
 
             if i < self.MPC_N:
                 self._solver.constraints_set(i, "lh", lh_i)
@@ -1260,7 +1259,7 @@ class PMMRacingController(Controller):
                 self._solver.constraints_set(self.MPC_N, "lh", lh_i)
                 self._solver.constraints_set(self.MPC_N, "uh", uh_i)
 
-        gamma = 0.95
+        gamma = 0.96
         weights_raw = np.array([gamma ** k for k in range(self.MPC_N)])
         weights_raw *= self.MPC_N / weights_raw.sum()
 
@@ -1280,7 +1279,7 @@ class PMMRacingController(Controller):
                 gate_dist = float(np.linalg.norm(ref_pos[i] - gp_cur))
 
                 if gate_dist < self.ALIGN_START_DIST:
-                    boost = 1.0 + 4.0 * (1.0 - gate_dist / self.ALIGN_START_DIST)
+                    boost = 1.0 + 2.5 * (1.0 - gate_dist / self.ALIGN_START_DIST)
 
                     W_i = W_i.copy()
                     W_i[3, 3] *= boost
@@ -1296,17 +1295,19 @@ class PMMRacingController(Controller):
 
         self._solver.set(self.MPC_N, "yref", yref_e)
 
+        self._warm_start_solver(x0, ref_pos, ref_vel)
+
         status = self._solver.solve()
 
         if status <= 2:
             u0 = np.asarray(self._solver.get(0, "u"), dtype=np.float64)
         else:
-            pull = ref_pos[min(3, self.MPC_N)] - pos
+            pull = ref_pos[min(8, self.MPC_N)] - pos
             pull_dist = float(np.linalg.norm(pull))
 
             if pull_dist > 0.01:
                 direction = pull / pull_dist
-                u0 = direction * min(3.0, pull_dist * 5.0)
+                u0 = direction * min(3.2, pull_dist * 5.0)
                 u0[2] += self._g
             else:
                 u0 = np.array([0.0, 0.0, self._g], dtype=np.float64)
@@ -1314,8 +1315,9 @@ class PMMRacingController(Controller):
         u0 = self._limit_commanded_accel(u0)
         u0 = self._launch_altitude_guard(u0, pos, vel)
 
-        # Local collision shield. This is intentionally applied before attitude
-        # conversion, not as a post-attitude roll/pitch correction.
+        # Progress first, then local obstacle shielding. Both are in world-frame
+        # acceleration coordinates before attitude conversion.
+        u0[:2] += self._gate_progress_accel(pos, vel)[:2]
         u0[:2] += self._avoidance_accel(pos, vel)[:2]
 
         u0 = self._limit_commanded_accel(u0)
@@ -1330,16 +1332,21 @@ class PMMRacingController(Controller):
                 gate_dist = float(np.linalg.norm(pos - self._gate_positions[self._target_gate]))
                 gp_t = self._gate_positions[self._target_gate]
                 dz = float(gp_t[2] - pos[2])
+                _, R_dbg = self._get_gate_frame(self._target_gate)
+                local_dbg = R_dbg.T @ (pos - gp_t)
+                gate_x = float(local_dbg[0])
             else:
                 gate_dist = -1.0
                 dz = 0.0
+                gate_x = 0.0
 
             print(
                 f"[GATE-MPC] step={self._tick} "
                 f"pos=[{pos[0]:.2f},{pos[1]:.2f},{pos[2]:.2f}] "
                 f"v={speed:.2f} vz={vz:.2f} dz={dz:.2f} "
                 f"u=[{u0[0]:.2f},{u0[1]:.2f},{u0[2]:.2f}] "
-                f"gate_dist={gate_dist:.3f} gate={self._target_gate}"
+                f"gate_dist={gate_dist:.3f} gate_x={gate_x:.3f} "
+                f"gate={self._target_gate} status={status}"
             )
 
         current_rpy = Rot.from_quat(obs["quat"]).as_euler("xyz")
@@ -1374,7 +1381,6 @@ class PMMRacingController(Controller):
         roll_cmd = float(np.clip(roll_cmd, -self.MAX_TILT_CMD, self.MAX_TILT_CMD))
         pitch_cmd = float(np.clip(pitch_cmd, -self.MAX_TILT_CMD, self.MAX_TILT_CMD))
 
-        # Recompute thrust again after APF and final attitude clipping.
         thrust_cmd = _vertical_preserving_thrust(
             az_world=float(u0[2]),
             roll=roll_cmd,
@@ -1418,6 +1424,8 @@ class PMMRacingController(Controller):
         truncated: bool,
         info: dict,
     ) -> bool:
+        del reward, terminated, truncated, info
+
         new_target = int(obs["target_gate"])
         gate_changed = new_target != self._target_gate
 
@@ -1427,22 +1435,24 @@ class PMMRacingController(Controller):
             self._finished = True
             return True
 
+        frames_changed = False
+
         for i in range(self._n_gates):
             if obs["gates_visited"][i] and not self._gates_visited[i]:
                 self._gates_visited[i] = True
                 self._gate_positions[i] = np.array(obs["gates_pos"][i], dtype=np.float64)
                 self._gate_quats[i] = np.array(obs["gates_quat"][i], dtype=np.float64)
                 self._gate_rotmats[i] = Rot.from_quat(self._gate_quats[i]).as_matrix()
+                frames_changed = True
+
+        if frames_changed or gate_changed:
+            self._refresh_gate_frames()
 
         for i in range(len(self._obstacle_positions)):
             if obs["obstacles_visited"][i] and not self._obstacles_visited[i]:
                 self._obstacles_visited[i] = True
                 self._obstacle_positions[i] = np.array(obs["obstacles_pos"][i], dtype=np.float64)
 
-        # Safer mass estimation:
-        # Only update when the vehicle is close to hover. Estimating mass during
-        # tilted/aggressive flight makes the mass estimate too high, which again
-        # increases thrust and worsens altitude drift.
         if len(action) >= 4 and self._tick > 10:
             roll = float(action[0])
             pitch = float(action[1])
@@ -1483,7 +1493,10 @@ class PMMRacingController(Controller):
                 start_size=2.0,
                 end_size=2.0,
             )
-            
+
+        # Yellow line: the MPC reference trajectory being tracked. If it bends
+        # around a pole, the MPC is being asked to go around it. If it goes
+        # through a pole, the route generator is the issue.
         ref_path = getattr(self, "_last_ref_pos", None)
 
         if ref_path is not None and len(ref_path) > 1:
