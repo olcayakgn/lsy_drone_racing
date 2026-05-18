@@ -7,6 +7,10 @@ if [ -z "$PIXI_PROJECT_ROOT" ]; then
     exit 0
 fi
 
+# Some dependencies (e.g. drone_models) require SciPy's Array API mode.
+# Setting it here makes it available automatically in `pixi shell`.
+export SCIPY_ARRAY_API="${SCIPY_ARRAY_API:-1}"
+
 # Check if pixi env is properly set up
 if [ ! -f ${PIXI_PROJECT_ROOT}/pixi.lock ]; then
   echo "[Setup Acados] ERROR: pixi environment is not properly set up."
