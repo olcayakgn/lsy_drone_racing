@@ -1,0 +1,36 @@
+# Motion Planning and Control Parameters
+constants:
+  v_max_ref: 2.5 # m/s
+  corner_acc: 2.5         # m/s^2
+  mpc_horizon: 200           # Steps
+  max_lateral_width: 0.21   # m (Static Corridor width)
+  safety_radius: 0.1       # m (Obstacle buffer)
+  tf_horizon: 1.0           # s
+  detour_radius: 0.5
+  gate_norm_detour: 0.5
+  tangent_scale_factor: 1.05
+
+
+
+  mpc_wts:
+    state_wts:
+      s : 1.0
+      w1: 2.0
+      w2: 2.0
+      ds: 0.0
+      dw1: 2.0
+      dw2: 2.0
+      phi : 1.0
+      theta : 1.0
+      psi : 1.0
+      dphi : 0.1
+      dtheta : 0.1
+      dpsi : 0.1
+
+    control_wts:
+      roll_cmd : 5.0
+      pitch_cmd: 5.0
+      yaw_cmd  : 5.0
+      thrust_cmd: 0.1
+
+    mpc_bound_cost: 700.0
