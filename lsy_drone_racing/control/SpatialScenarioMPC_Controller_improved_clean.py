@@ -397,6 +397,12 @@ class SpatialScenarioMPCController(Controller):
         self._plan_counter = 0
         self._summary_printed = False
 
+        # --- real-time lag detection ---
+        self._compute_deadline_s = self._dt
+        self._compute_ms_ema = 0.0
+        self._compute_lag_count = 0
+        self._compute_total_count = 0
+
         print(
             f"[SPATIAL-SCENARIO-MPC] ready: K={self.K_SAMPLES}, N={self.MPC_N}, "
             f"dt={self.MPC_DT:.3f}s, horizon={self.MPC_N * self.MPC_DT:.2f}s, "
@@ -2141,12 +2147,32 @@ class SpatialScenarioMPCController(Controller):
     # ------------------------------------------------------------------
     #  Main controller API
     # ------------------------------------------------------------------
+    def _check_compute_lag(self, t_start: float) -> None:
+        """Warn when compute_control exceeds the real-time control period."""
+        elapsed_ms = 1000.0 * (time.perf_counter() - t_start)
+        self._compute_total_count += 1
+        if self._compute_total_count == 1:
+            self._compute_ms_ema = elapsed_ms
+        else:
+            self._compute_ms_ema = 0.90 * self._compute_ms_ema + 0.10 * elapsed_ms
+        deadline_ms = 1000.0 * self._compute_deadline_s
+        if elapsed_ms > deadline_ms:
+            self._compute_lag_count += 1
+            lag_rate = 100.0 * self._compute_lag_count / max(1, self._compute_total_count)
+            print(
+                f"[SPATIAL-LAG] WARNING controller lagging: "
+                f"compute={elapsed_ms:.1f}ms > deadline={deadline_ms:.1f}ms "
+                f"(tick={self._tick}, lag {self._compute_lag_count}/{self._compute_total_count}={lag_rate:.1f}%, "
+                f"ema={self._compute_ms_ema:.1f}ms)"
+            )
+
     def compute_control(
         self,
         obs: dict[str, "NDArray[np.floating]"],
         info: dict | None = None,
     ) -> "NDArray[np.floating]":
         """Main control loop: replan with MPPI or interpolate cached plan, output attitude+thrust."""
+        _compute_t_start = time.perf_counter()
         self._tick += 1
         pos = np.asarray(obs["pos"], dtype=np.float64)
         vel = np.asarray(obs["vel"], dtype=np.float64)
@@ -2213,7 +2239,9 @@ class SpatialScenarioMPCController(Controller):
             u0 = self._clip_u(u0)
 
             self._prev_u = u0.copy()
-            return self._finish_action(obs, pos, u0)
+            action = self._finish_action(obs, pos, u0)
+            self._check_compute_lag(_compute_t_start)
+            return action
 
         # --- Expensive replan ---
         plan_t0 = time.perf_counter()
@@ -2342,7 +2370,9 @@ class SpatialScenarioMPCController(Controller):
                 f"u=[{u0[0]:+.3f},{u0[1]:+.3f},{u0[2]:+.3f},{u0[3]:.4f}]"
             )
 
-        return self._finish_action(obs, pos, u0)
+        action = self._finish_action(obs, pos, u0)
+        self._check_compute_lag(_compute_t_start)
+        return action
 
     # ------------------------------------------------------------------
     #  Callbacks
@@ -2366,10 +2396,15 @@ class SpatialScenarioMPCController(Controller):
             gates_passed = max(0, int(self._target_gate))
 
         flight_time = self._tick * self._dt
+        lag_rate = (
+            100.0 * self._compute_lag_count / max(1, self._compute_total_count)
+        )
         print(
             f"[SPATIAL-EP] {outcome:<8s} gates={gates_passed}/{self._n_gates} "
             f"time={flight_time:5.2f}s ticks={self._tick:4d} "
-            f"plans={self._plan_counter:4d} plan_ms_ema={self._plan_ms_ema:5.1f}"
+            f"plans={self._plan_counter:4d} plan_ms_ema={self._plan_ms_ema:5.1f} "
+            f"compute_ms_ema={self._compute_ms_ema:5.1f} "
+            f"lag={self._compute_lag_count}/{self._compute_total_count} ({lag_rate:.1f}%)"
         )
 
     def step_callback(self, action, obs, reward, terminated, truncated, info) -> bool:
