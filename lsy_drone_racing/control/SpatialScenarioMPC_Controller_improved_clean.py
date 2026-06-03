@@ -108,9 +108,9 @@ class SpatialScenarioMPCController(Controller):
     # ==========================================================================
     #  MPPI SAMPLING / HORIZON
     # ==========================================================================
-    MPC_N = 10                    # prediction horizon steps (10 × 0.11 = 1.1s)
+    MPC_N = 9                    # prediction horizon steps (9 × 0.11 = 0.99s)
     MPC_DT = 0.110                # prediction time step [s]
-    K_SAMPLES = 100               # number of MPPI rollout samples per plan
+    K_SAMPLES = 80               # number of MPPI rollout samples per plan
     N_ELITES = 1                  # number of elite samples for distribution update
     TEMPERATURE = 50.0            # MPPI softmax temperature (lower = greedier)
     NOISE_RHO = 0.84              # temporal correlation of MPPI noise (AR(1) coefficient)
