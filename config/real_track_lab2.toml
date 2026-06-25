@@ -1,5 +1,5 @@
 [controller]
-file = "MPPI_Controller.py"
+file = "MPPI_Controller2.py"
 
 [deploy]
 check_drone_start_pos = true
