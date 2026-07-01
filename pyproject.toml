@@ -41,7 +41,7 @@ sim = [
 gpu = ["jax[cuda12]"]
 # option[deploy]: deploy to real drones
 deploy = [
-    "cfclient",
+    "cflib2 @ git+https://github.com/ratheron/crazyflie-lib-python-v2.git@bccd34092c22392b941bbef9bc5a3718b9d27da0",
     "drone-estimators",
 ]
 # option[rl]: train rl policy
@@ -70,15 +70,15 @@ python = ">=3.11.12,<3.14"
 pip = ">=25.0.1,<26"
 ruff = "*"
 # Compilers needed for acados
-cmake = "*"
 compilers = ">=1.9.0, <1.11.0"
-make = "*"
+cmake = "==3.26.0"  # Pinned for motion_capture_tracking
+make = "==4.4.1"  # Pinned for motion_capture_tracking
 openblas = ">=0.3.30,<0.4"
 
 [tool.pixi.pypi-dependencies]
 lsy_drone_racing = { path = ".", editable = true }
 
-[tool.pixi.activation]
+[tool.pixi.feature.sim.activation]
 scripts = ["tools/setup_acados.sh"]
 
 [tool.pixi.tasks]
@@ -93,6 +93,7 @@ tests = { features = ["sim", "rl", "tests"], solve-group = "default" }
 gpu-tests = { features = ["sim", "gpu", "tests"], solve-group = "default" }
 gamepad = { features = ["sim", "gamepad"], solve-group = "default" }
 profile = { features = ["sim", "profile", "gpu"], solve-group = "default" }
+docs = { features = ["docs"] }
 
 ## feature [kilted]
 [tool.pixi.feature.kilted]
@@ -100,19 +101,23 @@ channels = ["https://prefix.dev/robostack-kilted"]
 
 [tool.pixi.feature.kilted.dependencies]
 # Build tools
-compilers = "*"
-cmake = "*"
 pkg-config = "*"
-make = "*"
 ninja = "*"
 # ROS specific tools
 rosdep = "*"
 colcon-common-extensions = "*"
 # Kilted specific tools
 ros-kilted-desktop = "*"
+ros2-distro-mutex = "0.12.*"  # Pinned for motion_capture_tracking
 
 [tool.pixi.feature.kilted.activation]
 scripts = ["tools/setup_mocap.sh"]
+
+## feature [deploy]
+[tool.pixi.feature.deploy.dependencies]
+packaging = ">=24,<26"  # Necessary for cflib2
+maturin = ">=1.13.3,<2"
+rust = ">=1.95.0,<1.96"
 
 ## feature [tests]
 [tool.pixi.feature.tests.tasks]
@@ -123,6 +128,24 @@ pytest = "*"
 
 [tool.pixi.feature.profile.dependencies]
 pyinstrument = "*"
+
+## feature [docs]
+[tool.pixi.feature.docs.dependencies]
+python = ">=3.10"
+properdocs = ">=1.5.0"
+mkdocs-material = ">=9.0.0"
+
+[tool.pixi.feature.docs.pypi-dependencies]
+mkdocs-autorefs = ">=1.2.0"
+mkdocstrings = { extras = ["python"], version = ">=0.26.0" }
+mkdocs-gen-files = ">=0.5.0"
+mkdocs-literate-nav = ">=0.6.0"
+mkdocs-section-index = ">=0.3.0"
+mkdocs-charts-plugin = ">=0.0.10"
+
+[tool.pixi.feature.docs.tasks]
+docs-build = { cmd = "properdocs build", description = "Build docs" }
+docs-serve = { cmd = "properdocs serve --livereload", description = "Serve docs locally" }
 
 ########################
 # Linting and formatting settings
@@ -145,7 +168,6 @@ exclude = [
     "dist",
     "site-packages",
     "venv",
-    "docs/conf.py",
 ]
 
 line-length = 100
