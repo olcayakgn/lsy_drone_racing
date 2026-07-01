@@ -1,5 +1,5 @@
 [controller]
-file = "SpatialScenarioMPC_Controller_improved_clean.py"
+file = "MPPI_Controller_without_Jax.py"
 
 [deploy]
 check_drone_start_pos = true

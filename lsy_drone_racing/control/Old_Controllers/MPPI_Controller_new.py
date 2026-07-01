@@ -302,7 +302,7 @@ class SpatialScenarioMPCController(Controller):
         self._dt = 1.0 / float(config.env.freq)
 
         # --- drone physical parameters ---
-        drone_params = load_params(config.sim.physics, config.sim.drone_model)
+        drone_params = load_params("so_rpy_rotor_drag", config.sim.drone_model)
         self._mass = float(drone_params["mass"])
         self._thrust_min = float(drone_params["thrust_min"]) * 4.0
         self._thrust_max = float(drone_params["thrust_max"]) * 4.0

@@ -35,6 +35,7 @@ from scipy.spatial.transform import Rotation as Rot
 try:
     import jax
     import jax.numpy as jnp
+
     _HAS_JAX = True
 except ImportError:
     _HAS_JAX = False
@@ -55,6 +56,7 @@ except ImportError as _imp_err:
 
     def draw_line(*a: object, **kw: object):
         """No-op stand-in so render code keeps working when spatial geometry is unavailable."""
+
 
 if TYPE_CHECKING:
     from crazyflow import Sim
@@ -81,207 +83,207 @@ class SpatialScenarioMPCController(Controller):
     # ==========================================================================
     #  GEOMETRY / PHYSICAL PARAMETERS
     # ==========================================================================
-    OBSTACLE_RADIUS = 0.15        # collision cylinder radius around obstacle poles [m]
-    OBSTACLE_BUFFER = 0.08        # soft penalty zone beyond obstacle radius [m]
-    DRONE_RADIUS = 0.05           # Crazyflie half-diagonal + margin [m]
+    OBSTACLE_RADIUS = 0.15  # collision cylinder radius around obstacle poles [m]
+    OBSTACLE_BUFFER = 0.08  # soft penalty zone beyond obstacle radius [m]
+    DRONE_RADIUS = 0.05  # Crazyflie half-diagonal + margin [m]
 
-    GATE_HALF_OPENING = 0.20      # inner edge half-width of gate opening [m]
-    GATE_OUTER_HALF = 0.28        # outer edge half-width of gate frame [m]
-    GATE_POST_RADIUS = 0.0        # box surface distance for gate posts [m]
-    GATE_FRAME_BUFFER = 0.12      # soft penalty zone around gate frame surfaces [m]
-    GATE_CLEARANCE = 0.045        # min clearance margin for valid gate crossing [m]
-    GATE_PLANE_SLAB = 0.16        # gate-plane slab half-thickness for slab penalty [m]
+    GATE_HALF_OPENING = 0.20  # inner edge half-width of gate opening [m]
+    GATE_OUTER_HALF = 0.28  # outer edge half-width of gate frame [m]
+    GATE_POST_RADIUS = 0.0  # box surface distance for gate posts [m]
+    GATE_FRAME_BUFFER = 0.12  # soft penalty zone around gate frame surfaces [m]
+    GATE_CLEARANCE = 0.045  # min clearance margin for valid gate crossing [m]
+    GATE_PLANE_SLAB = 0.16  # gate-plane slab half-thickness for slab penalty [m]
 
-    FUNNEL_LENGTH = 0.85          # approach funnel length — guides drone onto gate centreline [m]
-    FUNNEL_OUTER_HALF = 0.20      # funnel half-width at gate plane — matches opening [m]
-    APPROACH_DIST = 0.45          # approach waypoint distance before gate [m]
-    EXIT_DIST = 0.35              # exit waypoint distance after gate [m]
-    ALIGN_START_DIST = 1.20       # distance to gate where velocity alignment begins [m]
+    FUNNEL_LENGTH = 0.85  # approach funnel length — guides drone onto gate centreline [m]
+    FUNNEL_OUTER_HALF = 0.20  # funnel half-width at gate plane — matches opening [m]
+    APPROACH_DIST = 0.45  # approach waypoint distance before gate [m]
+    EXIT_DIST = 0.35  # exit waypoint distance after gate [m]
+    ALIGN_START_DIST = 1.20  # distance to gate where velocity alignment begins [m]
     # max dist at which W_NOT_CROSSED_REACHABLE activates (caps horizon-based threshold) [m]
     REACHABLE_DIST_CAP = 3.0
-    GATE_CROSS_DEPTH = 0.05       # terminal clearance past gate plane for zero crossing penalty [m]
+    GATE_CROSS_DEPTH = 0.05  # terminal clearance past gate plane for zero crossing penalty [m]
 
-    GROUND_CLEARANCE = 0.10       # minimum altitude above ground [m]
-    CEILING = 1.80                # maximum altitude [m]
+    GROUND_CLEARANCE = 0.10  # minimum altitude above ground [m]
+    CEILING = 1.80  # maximum altitude [m]
 
     # ==========================================================================
     #  SPEED LIMITS
     # ==========================================================================
-    V_CRUISE = 1.75               # nominal cruise speed [m/s]
-    V_GATE = 1.4                 # reduced speed near gate crossing [m/s]
-    V_MAX = 2.80                  # absolute speed limit [m/s]
+    V_CRUISE = 1.75  # nominal cruise speed [m/s]
+    V_GATE = 1.4  # reduced speed near gate crossing [m/s]
+    V_MAX = 2.80  # absolute speed limit [m/s]
 
     # ==========================================================================
     #  ATTITUDE / ACTUATOR LIMITS
     # ==========================================================================
-    MAX_ROLL_PITCH_CMD = 0.55     # max roll/pitch command [rad]
-    MAX_YAW_CMD = 0.50            # max yaw command magnitude [rad]
+    MAX_ROLL_PITCH_CMD = 0.55  # max roll/pitch command [rad]
+    MAX_YAW_CMD = 0.50  # max yaw command magnitude [rad]
 
     # ==========================================================================
     #  MPPI SAMPLING / HORIZON
     # ==========================================================================
-    MPC_N = 18                    # prediction horizon steps (18 × 0.11 = 1.98s)
-    MPC_DT = 0.110                # prediction time step [s]
-    K_SAMPLES = 4096              # number of MPPI rollout samples per plan (JAX-parallelised)
-    USE_JAX = True                # use JAX JIT+vmap acceleration (NumPy fallback if unavailable)
-    N_ELITES = 1                  # number of elite samples for distribution update
-    TEMPERATURE = 50.0            # MPPI softmax temperature (lower = greedier)
-    NOISE_RHO = 0.84              # temporal correlation of MPPI noise (AR(1) coefficient)
-    CMD_FILTER_ALPHA = 0.86       # low-pass filter on output command (0=old, 1=new)
-    RISK_BLEND_MARGIN = 0.07      # margin threshold for risk-aware blending [m]
-    PLANNER_HZ = 50.0             # replanning frequency [Hz]
-    RENDER_EVERY = 1              # render every Nth step
+    MPC_N = 9  # prediction horizon steps (9 × 0.11 = 0.99s)
+    MPC_DT = 0.110  # prediction time step [s]
+    K_SAMPLES = 4096  # number of MPPI rollout samples per plan (JAX-parallelised)
+    USE_JAX = True  # use JAX       JIT+vmap acceleration (NumPy fallback if unavailable)
+    N_ELITES = 1  # number of elite samples for distribution update
+    TEMPERATURE = 50.0  # MPPI softmax temperature (lower = greedier)
+    NOISE_RHO = 0.84  # temporal correlation of MPPI noise (AR(1) coefficient)
+    CMD_FILTER_ALPHA = 0.86  # low-pass filter on output command (0=old, 1=new)
+    RISK_BLEND_MARGIN = 0.07  # margin threshold for risk-aware blending [m]
+    PLANNER_HZ = 50.0  # replanning frequency [Hz]
+    RENDER_EVERY = 1  # render every Nth step
     DRAW_FULL_DEBUG_GEOMETRY = False  # draw all debug geometry in render
     EVALUATE_MEAN_ROLLOUT = True  # also evaluate the mean sequence as a sample
-    ROLLOUT_SUB_STEPS = 2         # Euler sub-steps per MPC interval for numerical stability
+    ROLLOUT_SUB_STEPS = 2  # Euler sub-steps per MPC interval for numerical stability
 
     # ==========================================================================
     #  CANDIDATE SELECTION
     # ==========================================================================
-    SAFE_SELECTION_MARGIN = 0.020   # min margin for a candidate to be considered safe [m]
-    SELECTION_MARGIN = 0.075        # preferred margin for robust selection [m]
-    ROBUST_CROSS_RADIUS = 0.090    # max gate-local YZ radius for a "center" crossing [m]
-    LOOSE_CROSS_RADIUS = 0.125     # max gate-local YZ radius for a "loose" crossing [m]
-    ELITE_BLEND_COUNT = 1          # number of elite candidates to blend
-    ELITE_TEMPERATURE = 18.0       # softmax temperature for elite blending
+    SAFE_SELECTION_MARGIN = 0.020  # min margin for a candidate to be considered safe [m]
+    SELECTION_MARGIN = 0.075  # preferred margin for robust selection [m]
+    ROBUST_CROSS_RADIUS = 0.090  # max gate-local YZ radius for a "center" crossing [m]
+    LOOSE_CROSS_RADIUS = 0.125  # max gate-local YZ radius for a "loose" crossing [m]
+    ELITE_BLEND_COUNT = 1  # number of elite candidates to blend
+    ELITE_TEMPERATURE = 18.0  # softmax temperature for elite blending
 
-    TRACK_LOOKAHEAD = 0.060        # time lookahead for cached-command interpolation [s]
+    TRACK_LOOKAHEAD = 0.060  # time lookahead for cached-command interpolation [s]
 
     # ==========================================================================
     #  DEBUG / DIAGNOSTICS
     # ==========================================================================
-    DEBUG_PRINT_ENABLED = True     # per-step diagnostic prints (episode summaries always print)
-    DEBUG_EVERY_PLANS = 10         # print diagnostics every Nth planning step
+    DEBUG_PRINT_ENABLED = True  # per-step diagnostic prints (episode summaries always print)
+    DEBUG_EVERY_PLANS = 10  # print diagnostics every Nth planning step
 
-    FORGET_OLD_SCENARIOS = True    # reset MPPI distribution each plan (vs. warm-start)
+    FORGET_OLD_SCENARIOS = True  # reset MPPI distribution each plan (vs. warm-start)
     USE_PREVIOUS_ROUTE_CANDIDATE = False  # inject previous route into candidates
-    RESET_SIGMA_EACH_PLAN = True   # reset exploration noise each plan
+    RESET_SIGMA_EACH_PLAN = True  # reset exploration noise each plan
     COMMAND_ONLY_NONCRASHING = True  # only select non-crashing samples for output
 
     # ==========================================================================
     #  MPPI NOISE DISTRIBUTION (4-D: [roll_cmd, pitch_cmd, yaw_cmd, thrust])
     # ==========================================================================
     SIGMA_INIT = np.array([0.35, 0.35, 0.25, 0.120], dtype=np.float64)  # initial exploration std
-    SIGMA_MIN = np.array([0.06, 0.06, 0.04, 0.020], dtype=np.float64)   # minimum exploration std
-    SIGMA_MAX = np.array([0.60, 0.60, 0.45, 0.200], dtype=np.float64)   # maximum exploration std
+    SIGMA_MIN = np.array([0.06, 0.06, 0.04, 0.020], dtype=np.float64)  # minimum exploration std
+    SIGMA_MAX = np.array([0.60, 0.60, 0.45, 0.200], dtype=np.float64)  # maximum exploration std
 
     # ==========================================================================
     #  ROUTE PLANNING
     # ==========================================================================
-    ROUTE_PRESELECT_K = 4          # number of route candidates to keep after scoring
-    ROUTE_TOP_K = 2                # number of top routes to keep after rollout ranking
-    ROUTE_MEAN_BLEND = 1.00        # blend factor for route mean into MPPI mean (0=keep, 1=replace)
-    ROUTE_COMMAND_BLEND = 0.24     # blend factor of route anchor into final command
-    ROUTE_SAMPLE_SPACING = 0.18    # polyline sampling spacing for route evaluation [m]
+    ROUTE_PRESELECT_K = 4  # number of route candidates to keep after scoring
+    ROUTE_TOP_K = 2  # number of top routes to keep after rollout ranking
+    ROUTE_MEAN_BLEND = 1.00  # blend factor for route mean into MPPI mean (0=keep, 1=replace)
+    ROUTE_COMMAND_BLEND = 0.24  # blend factor of route anchor into final command
+    ROUTE_SAMPLE_SPACING = 0.18  # polyline sampling spacing for route evaluation [m]
     ROUTE_OBS_LOOKAHEAD_MARGIN = 0.55  # obstacle lookahead margin for route detours [m]
     ROUTE_SIDE_OFFSETS = (0.0, 0.35, -0.35, 0.65, -0.65)  # lateral offsets for route variants [m]
     ROUTE_ENTRY_Y_OFFSETS = (0.0, 0.08, -0.08)  # gate-local Y offsets for entry variants [m]
     ROUTE_ENTRY_Z_OFFSETS = (0.0, 0.06, -0.06)  # gate-local Z offsets for entry variants [m]
-    ROUTE_GATE_SAFE_DIST = 0.18    # min distance from route to any gate frame bar [m]
+    ROUTE_GATE_SAFE_DIST = 0.18  # min distance from route to any gate frame bar [m]
     ROUTE_GATE_CHECK_SPACING = 0.12  # sample spacing for gate proximity checks [m]
 
     # ==========================================================================
     #  COST WEIGHTS — REFERENCE TRACKING
     # ==========================================================================
-    W_REF_POS = 11.0              # position tracking error weight
-    W_REF_VEL = 3.0               # velocity tracking error weight
-    W_TERMINAL_REF = 40.0         # terminal position error weight
-    W_PROGRESS = 26.0             # forward progress toward gate reward weight
-    W_GATE_DISTANCE_STAGE = 5.5   # per-step distance-to-gate penalty weight
+    W_REF_POS = 11.0  # position tracking error weight
+    W_REF_VEL = 3.0  # velocity tracking error weight
+    W_TERMINAL_REF = 40.0  # terminal position error weight
+    W_PROGRESS = 26.0  # forward progress toward gate reward weight
+    W_GATE_DISTANCE_STAGE = 5.5  # per-step distance-to-gate penalty weight
     W_GATE_DISTANCE_TERMINAL = 42.0  # terminal distance-to-gate penalty weight
-    W_GATE_CLOSING = 28.0         # reward for reducing distance to gate per step
-    W_GATE_APPROACH_VEL = 18.0    # penalty for retreating from gate within 0.30m (not-yet-crossed)
-    W_GATE_ALTITUDE = 15.0        # penalty for being below target gate altitude (climb incentive)
+    W_GATE_CLOSING = 28.0  # reward for reducing distance to gate per step
+    W_GATE_APPROACH_VEL = 18.0  # penalty for retreating from gate within 0.30m (not-yet-crossed)
+    W_GATE_ALTITUDE = 15.0  # penalty for being below target gate altitude (climb incentive)
     W_NOT_CROSSED_REACHABLE = 1800.0  # penalty for not crossing a reachable gate
 
     # ==========================================================================
     #  COST WEIGHTS — GATE CROSSING QUALITY
     # ==========================================================================
-    W_CROSS_CENTER = 4500.0       # reward for crossing gate near center
-    W_BAD_CROSS = 30000.0         # penalty for crossing outside safe opening
-    BONUS_GOOD_CROSS = 2100.0     # flat bonus for a clean center crossing
+    W_CROSS_CENTER = 4500.0  # reward for crossing gate near center
+    W_BAD_CROSS = 30000.0  # penalty for crossing outside safe opening
+    BONUS_GOOD_CROSS = 2100.0  # flat bonus for a clean center crossing
 
     # ==========================================================================
     #  COST WEIGHTS — OBSTACLE AVOIDANCE
     # ==========================================================================
-    W_POLE_BUFFER = 2600.0        # soft buffer zone penalty around poles
-    W_POLE_COLLISION = 25000.0    # hard collision penalty for poles
-    W_POLE_NEAR_EXP = 15.0       # exponential proximity penalty for poles
+    W_POLE_BUFFER = 2600.0  # soft buffer zone penalty around poles
+    W_POLE_COLLISION = 25000.0  # hard collision penalty for poles
+    W_POLE_NEAR_EXP = 15.0  # exponential proximity penalty for poles
 
     # ==========================================================================
     #  COST WEIGHTS — GATE FRAME AVOIDANCE
     # ==========================================================================
-    W_FRAME_BUFFER = 9000.0       # soft buffer zone penalty around gate frame bars
-    W_FRAME_COLLISION = 80000.0   # hard collision penalty for gate frame bars
-    W_FRAME_SLAB = 35000.0        # penalty for being in gate slab outside opening
-    W_FUNNEL = 2800.0             # funnel centering penalty (guides approach)
+    W_FRAME_BUFFER = 10000.0  # soft buffer zone penalty around gate frame bars
+    W_FRAME_COLLISION = 100000.0  # hard collision penalty for gate frame bars
+    W_FRAME_SLAB = 35000.0  # penalty for being in gate slab outside opening
+    W_FUNNEL = 2800.0  # funnel centering penalty (guides approach)
 
     # Cost multipliers for gate frame avoidance at different gate offsets.
     # 1.0 = full cost; lower values reduce influence of non-target gates.
-    GATE_COST_MULT_CURRENT = 1.00         # current target gate
+    GATE_COST_MULT_CURRENT = 1.00  # current target gate
     GATE_COST_MULT_CURRENT_PASSED = 0.85  # current gate after crossing / exit zone
-    GATE_COST_MULT_NEXT_ACTIVE = 0.85     # next gate when actively approaching
-    GATE_COST_MULT_NEXT_PASSIVE = 0.70    # next gate when not yet approaching
-    GATE_COST_MULT_NEXT2 = 0.55           # gate two ahead (horizon can reach it)
-    GATE_COST_MULT_PAST = 0.50            # all previously passed gates (U-turn safety)
+    GATE_COST_MULT_NEXT_ACTIVE = 0.85  # next gate when actively approaching
+    GATE_COST_MULT_NEXT_PASSIVE = 0.70  # next gate when not yet approaching
+    GATE_COST_MULT_NEXT2 = 0.55  # gate two ahead (horizon can reach it)
+    GATE_COST_MULT_PAST = 0.50  # all previously passed gates (U-turn safety)
 
     # ==========================================================================
     #  COST WEIGHTS — SAFETY / LIMITS
     # ==========================================================================
-    W_ALTITUDE = 6000.0           # soft altitude boundary penalty
-    W_ALTITUDE_HARD = 40000.0     # hard altitude violation penalty (floor/ceiling)
-    W_SPEED_LIMIT = 18.0          # overspeed penalty weight
-    W_INPUT = 0.025               # control magnitude regularisation
-    W_DINPUT = 0.075              # control rate-of-change regularisation
-    W_LATERAL = 0.020             # lateral deviation penalty
+    W_ALTITUDE = 6000.0  # soft altitude boundary penalty
+    W_ALTITUDE_HARD = 40000.0  # hard altitude violation penalty (floor/ceiling)
+    W_SPEED_LIMIT = 18.0  # overspeed penalty weight
+    W_INPUT = 0.025  # control magnitude regularisation
+    W_DINPUT = 0.075  # control rate-of-change regularisation
+    W_LATERAL = 0.020  # lateral deviation penalty
 
     # ==========================================================================
     #  COST WEIGHTS — SPATIAL / ROTATIONAL (Bishop frame)
     # ==========================================================================
-    W_CORRIDOR = 800.0            # soft corridor boundary penalty
-    W_CORRIDOR_HARD = 4000.0      # hard corridor violation penalty
-    W_SPATIAL_PROGRESS = 4.0      # reward for longitudinal progress along path
-    W_CURVATURE_SPEED = 2.0       # penalty for exceeding curvature-adapted speed limit
-    W_ATTITUDE_SMOOTH = 0.15      # angular rate smoothness penalty
-    W_ATTITUDE_LIMIT = 400.0      # penalty for roll/pitch beyond safe limit
+    W_CORRIDOR = 800.0  # soft corridor boundary penalty
+    W_CORRIDOR_HARD = 4000.0  # hard corridor violation penalty
+    W_SPATIAL_PROGRESS = 4.0  # reward for longitudinal progress along path
+    W_CURVATURE_SPEED = 2.0  # penalty for exceeding curvature-adapted speed limit
+    W_ATTITUDE_SMOOTH = 0.15  # angular rate smoothness penalty
+    W_ATTITUDE_LIMIT = 400.0  # penalty for roll/pitch beyond safe limit
 
     # ==========================================================================
     #  ROUTE TRACKING FEEDBACK (closed-loop PD correction)
     # ==========================================================================
     USE_PROJECTED_ROUTE_TRACKING = True  # use polyline projection vs. time-indexed tracking
-    PATH_LOOKAHEAD_DIST = 0.32     # base lookahead distance for path projection [m]
+    PATH_LOOKAHEAD_DIST = 0.32  # base lookahead distance for path projection [m]
     PATH_LOOKAHEAD_SPEED_GAIN = 0.08  # lookahead increase per m/s of speed
-    PATH_LOOKAHEAD_MAX = 0.58      # maximum lookahead distance [m]
-    CROSS_TRACK_KP = 5.20          # cross-track proportional gain
-    CROSS_TRACK_KD = 3.10          # cross-track derivative gain
-    ALONG_TRACK_KP = 0.80          # along-track proportional gain
-    ALONG_TRACK_KD = 0.85          # along-track derivative gain
-    TURN_BRAKE_GAIN = 1.35         # braking gain at sharp turns
-    TURN_SPEED_MIN = 0.95          # minimum speed at sharpest turns [m/s]
-    TURN_SPEED_MAX = 1.60          # maximum speed in turns [m/s]
-    TURN_ANGLE_FOR_SLOWDOWN = 0.55 # turn angle threshold for speed reduction [rad]
+    PATH_LOOKAHEAD_MAX = 0.58  # maximum lookahead distance [m]
+    CROSS_TRACK_KP = 5.20  # cross-track proportional gain
+    CROSS_TRACK_KD = 3.10  # cross-track derivative gain
+    ALONG_TRACK_KP = 0.80  # along-track proportional gain
+    ALONG_TRACK_KD = 0.85  # along-track derivative gain
+    TURN_BRAKE_GAIN = 1.35  # braking gain at sharp turns
+    TURN_SPEED_MIN = 0.95  # minimum speed at sharpest turns [m/s]
+    TURN_SPEED_MAX = 1.60  # maximum speed in turns [m/s]
+    TURN_ANGLE_FOR_SLOWDOWN = 0.55  # turn angle threshold for speed reduction [rad]
     CROSS_TRACK_SLOWDOWN_START = 0.12  # cross-track error where slowdown begins [m]
-    CROSS_TRACK_SLOWDOWN_FULL = 0.34   # cross-track error where slowdown is full [m]
+    CROSS_TRACK_SLOWDOWN_FULL = 0.34  # cross-track error where slowdown is full [m]
 
     # ==========================================================================
     #  REACTIVE OBSTACLE PUSH (APF — artificial potential field)
     # ==========================================================================
-    APF_INFLUENCE = 0.36           # influence radius for reactive obstacle push [m]
-    APF_GAIN = 0.22                # repulsion gain
-    APF_MAX = 0.65                 # maximum repulsion acceleration [m/s²]
+    APF_INFLUENCE = 0.36  # influence radius for reactive obstacle push [m]
+    APF_GAIN = 0.22  # repulsion gain
+    APF_MAX = 0.65  # maximum repulsion acceleration [m/s²]
 
     # ==========================================================================
     #  LAUNCH ALTITUDE HOLD
     # ==========================================================================
-    LAUNCH_HOLD_TIME = 0.25        # hold initial altitude for this duration [s]
-    LAUNCH_BLEND_TIME = 0.70       # blend to reference altitude over this duration [s]
-    VZ_REF_MAX = 0.65              # maximum vertical reference velocity [m/s]
+    LAUNCH_HOLD_TIME = 0.25  # hold initial altitude for this duration [s]
+    LAUNCH_BLEND_TIME = 0.70  # blend to reference altitude over this duration [s]
+    VZ_REF_MAX = 0.65  # maximum vertical reference velocity [m/s]
 
     # ==========================================================================
     #  DISCOVERY WARPING (smooth trajectory shift on gate/obstacle discovery)
     # ==========================================================================
-    WARP_GATE_INFLUENCE_RADIUS = 1.5   # Gaussian falloff radius for gate discovery shift [m]
-    WARP_OBS_INFLUENCE_RADIUS = 0.8    # Gaussian falloff radius for obstacle discovery shift [m]
+    WARP_GATE_INFLUENCE_RADIUS = 1.5  # Gaussian falloff radius for gate discovery shift [m]
+    WARP_OBS_INFLUENCE_RADIUS = 0.8  # Gaussian falloff radius for obstacle discovery shift [m]
 
     # ------------------------------------------------------------------
     #  Constructor
@@ -300,7 +302,7 @@ class SpatialScenarioMPCController(Controller):
         self._dt = 1.0 / float(config.env.freq)
 
         # --- drone physical parameters ---
-        drone_params = load_params(config.sim.physics, config.sim.drone_model)
+        drone_params = load_params("so_rpy_rotor_drag", config.sim.drone_model)
         self._mass = float(drone_params["mass"])
         self._thrust_min = float(drone_params["thrust_min"]) * 4.0
         self._thrust_max = float(drone_params["thrust_max"]) * 4.0
@@ -333,18 +335,14 @@ class SpatialScenarioMPCController(Controller):
         self._hover_u = np.array([0.0, 0.0, 0.0, self._hover_thrust], dtype=np.float64)
 
         # --- gate / obstacle setup ---
-        self._gate_positions = np.array(
-            [g.tolist() for g in obs["gates_pos"]], dtype=np.float64,
-        )
-        self._gate_quats = np.array(
-            [g.tolist() for g in obs["gates_quat"]], dtype=np.float64,
-        )
+        self._gate_positions = np.array([g.tolist() for g in obs["gates_pos"]], dtype=np.float64)
+        self._gate_quats = np.array([g.tolist() for g in obs["gates_quat"]], dtype=np.float64)
         self._gate_rotmats = [Rot.from_quat(q).as_matrix() for q in self._gate_quats]
         self._n_gates = len(self._gate_positions)
         self._target_gate = int(obs["target_gate"])
 
         self._obstacle_positions = np.array(
-            [p.tolist() for p in obs["obstacles_pos"]], dtype=np.float64,
+            [p.tolist() for p in obs["obstacles_pos"]], dtype=np.float64
         )
         self._n_obstacles = len(self._obstacle_positions)
         self._gates_visited = obs["gates_visited"].copy()
@@ -382,10 +380,10 @@ class SpatialScenarioMPCController(Controller):
 
         # --- planner timing ---
         self._planner_interval_steps = max(
-            1, int(round(1.0 / max(self.PLANNER_HZ * self._dt, _EPS))),
+            1, int(round(1.0 / max(self.PLANNER_HZ * self._dt, _EPS)))
         )
-        self._last_planner_tick = -10**9
-        self._cached_plan_tick = -10**9
+        self._last_planner_tick = -(10**9)
+        self._cached_plan_tick = -(10**9)
         self._cached_u_sequence = np.tile(self._hover_u, (self.MPC_N, 1))
         self._cached_u_index = 0
         self._cached_u0 = self._hover_u.copy()
@@ -480,11 +478,7 @@ class SpatialScenarioMPCController(Controller):
     #  Cartesian ↔ Spatial conversions
     # ------------------------------------------------------------------
     def _cartesian_to_spatial(
-        self,
-        pos: np.ndarray,
-        vel: np.ndarray,
-        rpy: np.ndarray,
-        drpy: np.ndarray,
+        self, pos: np.ndarray, vel: np.ndarray, rpy: np.ndarray, drpy: np.ndarray
     ) -> np.ndarray | None:
         """Convert world-frame state to spatial curvilinear (s, w1, w2) via Bishop frame."""
         if self._geo is None:
@@ -526,10 +520,10 @@ class SpatialScenarioMPCController(Controller):
             viol_lo = max(lb - w1, 0.0)
             viol_hi = max(w1 - ub, 0.0)
             viol = viol_lo + viol_hi
-            c = self.W_CORRIDOR * viol ** 2
+            c = self.W_CORRIDOR * viol**2
 
             deep = max(viol - 0.10, 0.0)
-            c += self.W_CORRIDOR_HARD * deep ** 2
+            c += self.W_CORRIDOR_HARD * deep**2
 
             # Apply to this sample and its neighbors
             end = min(i + stride, K)
@@ -558,7 +552,7 @@ class SpatialScenarioMPCController(Controller):
         v_corner = math.sqrt(5.0 / (k_mag + 0.01))
         speeds = np.linalg.norm(velocities, axis=1)
         overspeed = np.maximum(speeds - min(v_corner, self.V_MAX), 0.0)
-        curv_cost = overspeed ** 2
+        curv_cost = overspeed**2
 
         return progress, curv_cost
 
@@ -594,9 +588,9 @@ class SpatialScenarioMPCController(Controller):
         all_rpy[:, 0] = rpy
         all_drpy[:, 0] = drpy
 
-        c_rpy = self._rpy_coef       # (3,)
+        c_rpy = self._rpy_coef  # (3,)
         c_drpy = self._rpy_rates_coef  # (3,)
-        c_cmd = self._cmd_rpy_coef    # (3,)
+        c_cmd = self._cmd_rpy_coef  # (3,)
         g_z = -self._g
         inv_mass = 1.0 / self._mass_estimate
         acc_coef = self._acc_coef
@@ -615,9 +609,9 @@ class SpatialScenarioMPCController(Controller):
             drag_z_coef = self._drag_z
 
         for k in range(N):
-            u = samples[:, k, :]        # (K, 4)
-            cmd_rpy_k = u[:, :3]        # (K, 3) roll/pitch/yaw commands
-            t_cmd = u[:, 3:4]           # (K, 1) thrust command
+            u = samples[:, k, :]  # (K, 4)
+            cmd_rpy_k = u[:, :3]  # (K, 3) roll/pitch/yaw commands
+            t_cmd = u[:, 3:4]  # (K, 1) thrust command
 
             for _ in range(n_sub):
                 # --- Rotor lag: first-order thrust response ---
@@ -631,18 +625,18 @@ class SpatialScenarioMPCController(Controller):
                 ddrpy = c_rpy[None, :] * rpy + c_drpy[None, :] * drpy + c_cmd[None, :] * cmd_rpy_k
 
                 # --- Rotation matrix elements ---
-                phi   = rpy[:, 0:1]
+                phi = rpy[:, 0:1]
                 theta = rpy[:, 1:2]
-                psi   = rpy[:, 2:3]
+                psi = rpy[:, 2:3]
 
                 cx, sx = np.cos(phi), np.sin(phi)
                 cy, sy = np.cos(theta), np.sin(theta)
                 cz, sz = np.cos(psi), np.sin(psi)
 
                 # Third column of R_IB (body Z in world) — for thrust
-                r_02 = sx * sz + cx * cz * sy   # (K, 1)
-                r_12 = cx * sy * sz - cz * sx   # (K, 1)
-                r_22 = cx * cy                   # (K, 1)
+                r_02 = sx * sz + cx * cz * sy  # (K, 1)
+                r_12 = cx * sy * sz - cz * sx  # (K, 1)
+                r_22 = cx * cy  # (K, 1)
 
                 # --- World-frame acceleration ---
                 acc = np.empty_like(vel)
@@ -718,9 +712,7 @@ class SpatialScenarioMPCController(Controller):
 
     @staticmethod
     def _point_segment_distance_xy(
-        point_xy: np.ndarray,
-        a_xy: np.ndarray,
-        b_xy: np.ndarray,
+        point_xy: np.ndarray, a_xy: np.ndarray, b_xy: np.ndarray
     ) -> tuple[float, float, np.ndarray]:
         """2D point-to-segment distance (used for obstacle detour planning)."""
         ab = b_xy - a_xy
@@ -756,10 +748,10 @@ class SpatialScenarioMPCController(Controller):
         # All boxes have half_x = 0.01 (gate plane thickness)
         hx = 0.01
         boxes = [
-            (0.0,   0.28, 0.36, 0.08),   # top
-            (0.0,  -0.28, 0.36, 0.08),   # bottom
-            (-0.28,  0.0, 0.08, 0.36),   # left
-            (0.28,   0.0, 0.08, 0.36),   # right
+            (0.0, 0.28, 0.36, 0.08),  # top
+            (0.0, -0.28, 0.36, 0.08),  # bottom
+            (-0.28, 0.0, 0.08, 0.36),  # left
+            (0.28, 0.0, 0.08, 0.36),  # right
         ]
 
         d_min = np.full(K, 1e6, dtype=np.float64)
@@ -770,9 +762,7 @@ class SpatialScenarioMPCController(Controller):
             dz = np.abs(z - cz) - hz
             # Outside distance: Euclidean of positive components
             outside = np.sqrt(
-                np.maximum(dx, 0.0) ** 2
-                + np.maximum(dy, 0.0) ** 2
-                + np.maximum(dz, 0.0) ** 2,
+                np.maximum(dx, 0.0) ** 2 + np.maximum(dy, 0.0) ** 2 + np.maximum(dz, 0.0) ** 2
             )
             # Inside distance: max of negative components (closest wall)
             inside = np.maximum(dx, np.maximum(dy, dz))
@@ -783,11 +773,7 @@ class SpatialScenarioMPCController(Controller):
         return d_min
 
     def _gate_geometry_cost_and_margin(
-        self,
-        pos: np.ndarray,
-        gp: np.ndarray,
-        R: np.ndarray,
-        active_funnel: bool,
+        self, pos: np.ndarray, gp: np.ndarray, R: np.ndarray, active_funnel: bool
     ) -> tuple[np.ndarray, np.ndarray]:
         """Compute frame collision + funnel + slab cost for one gate. Core gate avoidance cost."""
         local = self._world_to_gate_local(pos, gp, R)
@@ -893,7 +879,7 @@ class SpatialScenarioMPCController(Controller):
             a, b = route[i], route[i + 1]
             d = float(np.linalg.norm(b - a))
             n = max(1, int(math.ceil(d / max(spacing, 0.03))))
-            for j in range(1, n + 1): 
+            for j in range(1, n + 1):
                 pts.append((1.0 - j / n) * a + (j / n) * b)
         return np.vstack(pts)
 
@@ -918,10 +904,10 @@ class SpatialScenarioMPCController(Controller):
         # Find nearest bar center in gate-local coords
         hx = 0.01
         boxes = [
-            (0.0,   0.28, 0.36, 0.08),   # top
-            (0.0,  -0.28, 0.36, 0.08),   # bottom
-            (-0.28,  0.0, 0.08, 0.36),   # left
-            (0.28,   0.0, 0.08, 0.36),   # right
+            (0.0, 0.28, 0.36, 0.08),  # top
+            (0.0, -0.28, 0.36, 0.08),  # bottom
+            (-0.28, 0.0, 0.08, 0.36),  # left
+            (0.28, 0.0, 0.08, 0.36),  # right
         ]
         best_dist = 1e6
         best_push_local = np.array([0.0, 0.0, 0.0])
@@ -929,17 +915,13 @@ class SpatialScenarioMPCController(Controller):
             dx = abs(local[0]) - hx
             dy = abs(local[1] - cy) - hy
             dz = abs(local[2] - cz) - hz
-            outside = math.sqrt(max(dx, 0.0)**2 + max(dy, 0.0)**2 + max(dz, 0.0)**2)
-            inside = max(dx,dy, dz)
+            outside = math.sqrt(max(dx, 0.0) ** 2 + max(dy, 0.0) ** 2 + max(dz, 0.0) ** 2)
+            inside = max(dx, dy, dz)
             dist = 0.0 if inside < 0.0 else outside
             if dist < best_dist:
                 best_dist = dist
                 # Push direction: from box center toward point, in gate-local frame
-                push = np.array([
-                    local[0],
-                    local[1] - cy,
-                    local[2] - cz,
-                ], dtype=np.float64)
+                push = np.array([local[0], local[1] - cy, local[2] - cz], dtype=np.float64)
                 norm = float(np.linalg.norm(push))
                 if norm > _EPS:
                     best_push_local = push / norm
@@ -1032,9 +1014,9 @@ class SpatialScenarioMPCController(Controller):
                     push, _ = self._gate_frame_push_vector(pt, gi)
                     push_mag = max(safe_dist - dists[vi] + 0.06, 0.04)
                     deflected = pt + push_mag * push
-                    deflected[2] = float(np.clip(
-                        deflected[2], self.GROUND_CLEARANCE + 0.03, self.CEILING - 0.05,
-                    ))
+                    deflected[2] = float(
+                        np.clip(deflected[2], self.GROUND_CLEARANCE + 0.03, self.CEILING - 0.05)
+                    )
                     new_points.append(deflected)
 
             new_points.append(route[seg_i + 1].copy())
@@ -1133,10 +1115,7 @@ class SpatialScenarioMPCController(Controller):
         return [self._clip_route_point(q) for q in tail]
 
     def _score_route(
-        self,
-        route: np.ndarray,
-        pos: np.ndarray,
-        vel: np.ndarray | None = None,
+        self, route: np.ndarray, pos: np.ndarray, vel: np.ndarray | None = None
     ) -> float:
         """Score a candidate route by length, alignment, obstacle/gate proximity, and smoothness."""
         route = self._clean_route(route)
@@ -1233,9 +1212,7 @@ class SpatialScenarioMPCController(Controller):
         return float(score)
 
     def _build_route_candidates(
-        self,
-        pos: np.ndarray,
-        vel: np.ndarray,
+        self, pos: np.ndarray, vel: np.ndarray
     ) -> tuple[list[np.ndarray], list[float]]:
         """Generate multiple candidate routes (direct, side, detour, reversal) and rank by score."""
         if self._target_gate < 0 or self._target_gate >= self._n_gates:
@@ -1320,8 +1297,17 @@ class SpatialScenarioMPCController(Controller):
                     pre_blend = 0.65 * pre_pt + 0.35 * detour
                     post_blend = 0.65 * post_pt + 0.35 * detour
                     add_route(
-                        [pos.copy(), pre_blend, detour, post_blend, entry_center,
-                         approach, gp.copy(), exit_pt] + tail[3:]
+                        [
+                            pos.copy(),
+                            pre_blend,
+                            detour,
+                            post_blend,
+                            entry_center,
+                            approach,
+                            gp.copy(),
+                            exit_pt,
+                        ]
+                        + tail[3:]
                     )
 
         speed = float(np.linalg.norm(vel[:2]))
@@ -1364,8 +1350,17 @@ class SpatialScenarioMPCController(Controller):
                     mid_return[2] = 0.60 * arc_pt[2] + 0.40 * entry_center[2]
 
                     add_route(
-                        [pos.copy(), fwd_pt.copy(), arc_pt, mid_return, entry_center,
-                         approach, gp.copy(), exit_pt] + tail[3:]
+                        [
+                            pos.copy(),
+                            fwd_pt.copy(),
+                            arc_pt,
+                            mid_return,
+                            entry_center,
+                            approach,
+                            gp.copy(),
+                            exit_pt,
+                        ]
+                        + tail[3:]
                     )
 
         if not candidates:
@@ -1378,7 +1373,7 @@ class SpatialScenarioMPCController(Controller):
 
         scored = [(self._score_route(r, pos, vel), r) for r in candidates]
         scored.sort(key=lambda item: item[0])
-        top = scored[:max(1, int(self.ROUTE_PRESELECT_K))]
+        top = scored[: max(1, int(self.ROUTE_PRESELECT_K))]
         return [r for _, r in top], [float(c) for c, _ in top]
 
     # ------------------------------------------------------------------
@@ -1505,7 +1500,7 @@ class SpatialScenarioMPCController(Controller):
 
             # Convert desired acceleration to attitude commands
             roll_cmd, pitch_cmd, yaw_cmd, thrust = self._accel_to_attitude_cmd(
-                a_des, target_yaw=0.0,
+                a_des, target_yaw=0.0
             )
             seq[k] = [roll_cmd, pitch_cmd, yaw_cmd, thrust]
 
@@ -1529,11 +1524,13 @@ class SpatialScenarioMPCController(Controller):
                 r_02 = sx * sz + cx * cz * sy
                 r_12 = cx * sy * sz - cz * sx
                 r_22 = cx * cy
-                acc_w = np.array([
-                    r_02 * thrust_phys * inv_m,
-                    r_12 * thrust_phys * inv_m,
-                    -self._g + r_22 * thrust_phys * inv_m,
-                ])
+                acc_w = np.array(
+                    [
+                        r_02 * thrust_phys * inv_m,
+                        r_12 * thrust_phys * inv_m,
+                        -self._g + r_22 * thrust_phys * inv_m,
+                    ]
+                )
 
                 # Drag
                 if self._has_drag:
@@ -1562,9 +1559,7 @@ class SpatialScenarioMPCController(Controller):
         return self._clip_u(seq)
 
     def _accel_to_attitude_cmd(
-        self,
-        a_des: np.ndarray,
-        target_yaw: float = 0.0,
+        self, a_des: np.ndarray, target_yaw: float = 0.0
     ) -> tuple[float, float, float, float]:
         """Convert desired acceleration to [roll, pitch, yaw, thrust] commands (PD warm-start)."""
         a = np.asarray(a_des, dtype=np.float64)
@@ -1636,14 +1631,33 @@ class SpatialScenarioMPCController(Controller):
                 "obs_xy": jnp.zeros((n_obs_pad, 2), jnp.float32),
             }
             out = self._jax_eval(
-                _d["samples"], _d["pos0"], _d["vel0"], _d["rpy0"], _d["drpy0"],
-                _d["T_act0"], _d["ref_pos"], _d["ref_vel"],
-                _d["hover_u"], _d["prev_u"], _d["inv_m"],
-                _d["tgt_gp"], _d["tgt_gR"], _d["tgt_n"],
-                _d["s0"], _d["d0"], _d["tv"], _d["reach"],
-                _d["nxt_gp"], _d["nxt_gR"], _d["nv"],
-                _d["n2_gp"], _d["n2_gR"], _d["n2v"],
-                _d["past_gp"], _d["past_gR"], _d["past_mask"],
+                _d["samples"],
+                _d["pos0"],
+                _d["vel0"],
+                _d["rpy0"],
+                _d["drpy0"],
+                _d["T_act0"],
+                _d["ref_pos"],
+                _d["ref_vel"],
+                _d["hover_u"],
+                _d["prev_u"],
+                _d["inv_m"],
+                _d["tgt_gp"],
+                _d["tgt_gR"],
+                _d["tgt_n"],
+                _d["s0"],
+                _d["d0"],
+                _d["tv"],
+                _d["reach"],
+                _d["nxt_gp"],
+                _d["nxt_gR"],
+                _d["nv"],
+                _d["n2_gp"],
+                _d["n2_gR"],
+                _d["n2v"],
+                _d["past_gp"],
+                _d["past_gR"],
+                _d["past_mask"],
                 _d["obs_xy"],
             )
             jax.block_until_ready(out[0])
@@ -1653,6 +1667,7 @@ class SpatialScenarioMPCController(Controller):
             )
         except Exception as exc:  # noqa: BLE001
             import traceback
+
             print(f"[JAX-MPPI] Init failed ({exc}), falling back to NumPy.")
             traceback.print_exc()
             self._jax_eval = None
@@ -1688,8 +1703,8 @@ class SpatialScenarioMPCController(Controller):
         W_PROG = float(self.W_PROGRESS)
         W_GDS = float(self.W_GATE_DISTANCE_STAGE)
         W_GCL_w = float(self.W_GATE_CLOSING)
-        W_GAV = float(self.W_GATE_APPROACH_VEL)   # near-gate retreat penalty
-        W_GALT = float(self.W_GATE_ALTITUDE)        # altitude-to-gate penalty
+        W_GAV = float(self.W_GATE_APPROACH_VEL)  # near-gate retreat penalty
+        W_GALT = float(self.W_GATE_ALTITUDE)  # altitude-to-gate penalty
         W_GDT = float(self.W_GATE_DISTANCE_TERMINAL)
         W_CC = float(self.W_CROSS_CENTER)
         W_BC = float(self.W_BAD_CROSS)
@@ -1734,9 +1749,7 @@ class SpatialScenarioMPCController(Controller):
         C_RPY = jnp.array(self._rpy_coef, dtype=jnp.float32)
         C_DRPY = jnp.array(self._rpy_rates_coef, dtype=jnp.float32)
         C_CMD = jnp.array(self._cmd_rpy_coef, dtype=jnp.float32)
-        STAGE_W = jnp.array(
-            [0.65 + 0.70 * (k + 1) / N for k in range(N)], dtype=jnp.float32
-        )
+        STAGE_W = jnp.array([0.65 + 0.70 * (k + 1) / N for k in range(N)], dtype=jnp.float32)
 
         def _dist_to_bars(loc3: jax.Array) -> jax.Array:
             """Distance from a single gate-local point (3,) to nearest gate bar."""
@@ -1745,17 +1758,13 @@ class SpatialScenarioMPCController(Controller):
             dy = jnp.abs(y - BOX_CY) - BOX_HY
             dz_b = jnp.abs(z - BOX_CZ) - BOX_HZ
             outside = jnp.sqrt(
-                jnp.maximum(dx, 0.0) ** 2
-                + jnp.maximum(dy, 0.0) ** 2
-                + jnp.maximum(dz_b, 0.0) ** 2
+                jnp.maximum(dx, 0.0) ** 2 + jnp.maximum(dy, 0.0) ** 2 + jnp.maximum(dz_b, 0.0) ** 2
             )
             inside = jnp.maximum(dx, jnp.maximum(dy, dz_b))
             return jnp.min(jnp.where(inside < 0.0, 0.0, outside))
 
         def _gate_geom(
-            pos3: jax.Array,
-            gp: jax.Array,
-            gR: jax.Array,
+            pos3: jax.Array, gp: jax.Array, gR: jax.Array
         ) -> tuple[jax.Array, jax.Array, jax.Array]:
             """Return (c_active, c_passive, d_eff) for a single position."""
             local = (pos3 - gp) @ gR
@@ -1766,8 +1775,7 @@ class SpatialScenarioMPCController(Controller):
             d_eff = d_bar - DR
             v_soft = jnp.maximum(GFB - d_eff, 0.0)
             v_hard = jnp.maximum(-d_eff, 0.0)
-            base = (W_FB * (v_soft / max(GFB, EPS)) ** 2
-                    + W_FC * (v_hard / max(DR, EPS)) ** 2)
+            base = W_FB * (v_soft / max(GFB, EPS)) ** 2 + W_FC * (v_hard / max(DR, EPS)) ** 2
             in_sl = (xa < GS).astype(jnp.float32)
             out_op = jnp.maximum(jnp.maximum(ya - eff_half, za - eff_half), 0.0)
             sl_sc = jnp.maximum(1.0 - xa / GS, 0.0)
@@ -1789,34 +1797,34 @@ class SpatialScenarioMPCController(Controller):
             return c_a, c_p, d_eff
 
         def _single_sample(
-            u_seq: jax.Array,           # (N, 4)
-            pos0: jax.Array,            # (3,)
-            vel0: jax.Array,            # (3,)
-            rpy0: jax.Array,            # (3,)
-            drpy0: jax.Array,           # (3,)
-            T_act0: jax.Array,          # scalar
-            ref_pos_in: jax.Array,      # (N+1, 3)
-            ref_vel_in: jax.Array,      # (N+1, 3)
-            hover_u_in: jax.Array,      # (4,)
-            prev_u_in: jax.Array,       # (4,)
-            inv_m_in: jax.Array,        # scalar
-            tgt_gp: jax.Array,          # (3,)
-            tgt_gR: jax.Array,          # (3, 3)
-            tgt_n: jax.Array,           # (3,)
-            s0: jax.Array,              # scalar
-            d0: jax.Array,              # scalar
-            tv: jax.Array,              # scalar
-            reach: jax.Array,           # scalar
-            nxt_gp: jax.Array,          # (3,)
-            nxt_gR: jax.Array,          # (3, 3)
-            nv: jax.Array,              # scalar
-            n2_gp: jax.Array,           # (3,)
-            n2_gR: jax.Array,           # (3, 3)
-            n2v: jax.Array,             # scalar
-            past_gp_in: jax.Array,      # (P, 3)
-            past_gR_in: jax.Array,      # (P, 3, 3)
-            past_mask_in: jax.Array,    # (P,)
-            obs_xy_in: jax.Array,       # (n_obs_pad, 2)
+            u_seq: jax.Array,  # (N, 4)
+            pos0: jax.Array,  # (3,)
+            vel0: jax.Array,  # (3,)
+            rpy0: jax.Array,  # (3,)
+            drpy0: jax.Array,  # (3,)
+            T_act0: jax.Array,  # scalar
+            ref_pos_in: jax.Array,  # (N+1, 3)
+            ref_vel_in: jax.Array,  # (N+1, 3)
+            hover_u_in: jax.Array,  # (4,)
+            prev_u_in: jax.Array,  # (4,)
+            inv_m_in: jax.Array,  # scalar
+            tgt_gp: jax.Array,  # (3,)
+            tgt_gR: jax.Array,  # (3, 3)
+            tgt_n: jax.Array,  # (3,)
+            s0: jax.Array,  # scalar
+            d0: jax.Array,  # scalar
+            tv: jax.Array,  # scalar
+            reach: jax.Array,  # scalar
+            nxt_gp: jax.Array,  # (3,)
+            nxt_gR: jax.Array,  # (3, 3)
+            nv: jax.Array,  # scalar
+            n2_gp: jax.Array,  # (3,)
+            n2_gR: jax.Array,  # (3, 3)
+            n2v: jax.Array,  # scalar
+            past_gp_in: jax.Array,  # (P, 3)
+            past_gR_in: jax.Array,  # (P, 3, 3)
+            past_mask_in: jax.Array,  # (P,)
+            obs_xy_in: jax.Array,  # (n_obs_pad, 2)
         ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
             """Evaluate one (N,4) control sequence — vmapped over K."""
 
@@ -1856,15 +1864,15 @@ class SpatialScenarioMPCController(Controller):
                         R20 = -sy
                         R21 = cy * sx
                         vx, vy, vz = vel[0], vel[1], vel[2]
-                        vbx = R00*vx + R10*vy + R20*vz
-                        vby = R01*vx + R11*vy + R21*vz
-                        vbz = R02*vx + R12*vy + R22*vz
+                        vbx = R00 * vx + R10 * vy + R20 * vz
+                        vby = R01 * vx + R11 * vy + R21 * vz
+                        vbz = R02 * vx + R12 * vy + R22 * vz
                         fdx = dxy * vbx
                         fdy = dxy * vby
                         fdz = dz_coef * vbz
-                        a0 = a0 + (R00*fdx + R01*fdy + R02*fdz) * inv_m_in
-                        a1 = a1 + (R10*fdx + R11*fdy + R12*fdz) * inv_m_in
-                        a2 = a2 + (R20*fdx + R21*fdy + R22*fdz) * inv_m_in
+                        a0 = a0 + (R00 * fdx + R01 * fdy + R02 * fdz) * inv_m_in
+                        a1 = a1 + (R10 * fdx + R11 * fdy + R12 * fdz) * inv_m_in
+                        a2 = a2 + (R20 * fdx + R21 * fdy + R22 * fdz) * inv_m_in
                     drpy = drpy + ddrpy * sub_dt
                     rpy = rpy + drpy * sub_dt
                     vel = vel + jnp.array([a0, a1, a2]) * sub_dt
@@ -1873,21 +1881,19 @@ class SpatialScenarioMPCController(Controller):
                 # --- Cost accumulation ---
                 du = u_k - lu
                 lu = u_k
-                cost = cost + W_IN * jnp.sum((u_k - hover_u_in) ** 2) + W_DIN * jnp.sum(du ** 2)
+                cost = cost + W_IN * jnp.sum((u_k - hover_u_in) ** 2) + W_DIN * jnp.sum(du**2)
                 cost = cost + W_AL * (
                     jnp.maximum(jnp.abs(rpy[0]) - MAX_RP, 0.0) ** 2
                     + jnp.maximum(jnp.abs(rpy[1]) - MAX_RP, 0.0) ** 2
                 )
-                cost = cost + W_AS * jnp.sum(drpy ** 2)
+                cost = cost + W_AS * jnp.sum(drpy**2)
                 ep = pos - rpk
                 ev = vel - rvk
-                cost = cost + sw * (W_RP * jnp.sum(ep ** 2) + W_RV * jnp.sum(ev ** 2))
+                cost = cost + sw * (W_RP * jnp.sum(ep**2) + W_RV * jnp.sum(ev**2))
                 bel = jnp.maximum(GND - pos[2], 0.0)
                 abv = jnp.maximum(pos[2] - CEIL, 0.0)
-                cost = cost + W_ALT * (bel ** 2 + abv ** 2)
-                cost = cost + W_ALTH * jnp.where(
-                    (pos[2] < 0.02) | (pos[2] > CEIL + 0.25), 1.0, 0.0
-                )
+                cost = cost + W_ALT * (bel**2 + abv**2)
+                cost = cost + W_ALTH * jnp.where((pos[2] < 0.02) | (pos[2] > CEIL + 0.25), 1.0, 0.0)
                 mm = jnp.minimum(mm, pos[2] - GND)
                 mm = jnp.minimum(mm, CEIL - pos[2])
                 cost = cost + W_SPD * jnp.maximum(jnp.linalg.norm(vel) - V_MAX, 0.0) ** 2
@@ -1896,7 +1902,7 @@ class SpatialScenarioMPCController(Controller):
                 soft_r = OBS_R + OBS_B
                 for i_o in range(n_obs):
                     diff = pos[:2] - obs_xy_in[i_o]
-                    d_o = jnp.sqrt(jnp.maximum(jnp.sum(diff ** 2), EPS))
+                    d_o = jnp.sqrt(jnp.maximum(jnp.sum(diff**2), EPS))
                     cost = cost + W_PB * (jnp.maximum(soft_r - d_o, 0.0) / soft_r) ** 2
                     cost = cost + W_PC * (jnp.maximum(OBS_R - d_o, 0.0) / OBS_R) ** 2
                     cost = cost + W_PN * jnp.exp(-jnp.maximum(d_o - OBS_R, 0.0) / 0.18)
@@ -1944,7 +1950,7 @@ class SpatialScenarioMPCController(Controller):
                     + jnp.maximum(jnp.abs(zc) - clear_cross, 0.0) ** 2
                 )
                 cost = cost + cf * (~ins).astype(jnp.float32) * W_BC * (
-                    1.0 + ba / max(clear_cross ** 2, EPS)
+                    1.0 + ba / max(clear_cross**2, EPS)
                 )
                 gc = jnp.where(cross & ins & (tv > 0.5), True, gc)
                 bc = jnp.where(cross & (~ins) & (tv > 0.5), True, bc)
@@ -1978,18 +1984,17 @@ class SpatialScenarioMPCController(Controller):
                 rpy0.astype(jnp.float32),
                 drpy0.astype(jnp.float32),
                 T_act0,
-                s0, s0,                            # sp (signed_prev), mprog
-                jnp.bool_(False),                  # gc  (good_crossed)
-                jnp.bool_(False),                  # bc  (bad_crossed)
-                prev_u_in.astype(jnp.float32),     # lu  (last_u)
-                jnp.float32(0.0),                  # cost
-                jnp.float32(jnp.inf),              # mm  (min_margin)
+                s0,
+                s0,  # sp (signed_prev), mprog
+                jnp.bool_(False),  # gc  (good_crossed)
+                jnp.bool_(False),  # bc  (bad_crossed)
+                prev_u_in.astype(jnp.float32),  # lu  (last_u)
+                jnp.float32(0.0),  # cost
+                jnp.float32(jnp.inf),  # mm  (min_margin)
             )
             final, pos_seq = jax.lax.scan(scan_step, init_carry, xs)
             # pos_seq: (N, 3) — positions at steps 1..N
-            all_pos = jnp.concatenate(
-                [pos0[None].astype(jnp.float32), pos_seq], axis=0
-            )  # (N+1, 3)
+            all_pos = jnp.concatenate([pos0[None].astype(jnp.float32), pos_seq], axis=0)  # (N+1, 3)
 
             cost_f = final[10]
             mm_f = final[11]
@@ -2004,33 +2009,58 @@ class SpatialScenarioMPCController(Controller):
             cost_f = cost_f - W_PROG * (mprog_f - s0) * tv
             df = jnp.linalg.norm(term - tgt_gp)
             miss = ~gc_f
-            cost_f = cost_f + miss.astype(jnp.float32) * W_GDT * (
-                df / jnp.maximum(d0, 1.0)
-            ) ** 2 * tv
+            cost_f = (
+                cost_f + miss.astype(jnp.float32) * W_GDT * (df / jnp.maximum(d0, 1.0)) ** 2 * tv
+            )
             cost_f = cost_f - gc_f.astype(jnp.float32) * 250.0 * tv
             cost_f = cost_f + (
-                W_NC * miss.astype(jnp.float32)
-                * jnp.maximum(jnp.float32(self.GATE_CROSS_DEPTH) - sf, 0.0) ** 2 * tv * reach
+                W_NC
+                * miss.astype(jnp.float32)
+                * jnp.maximum(jnp.float32(self.GATE_CROSS_DEPTH) - sf, 0.0) ** 2
+                * tv
+                * reach
             )
             mm_f = jnp.where(bc_f, jnp.minimum(mm_f, -0.10), mm_f)
-            cost_f = jnp.nan_to_num(cost_f, nan=jnp.float32(1e12),
-                                    posinf=jnp.float32(1e12), neginf=jnp.float32(-1e12))
-            mm_f = jnp.nan_to_num(mm_f, nan=jnp.float32(-1.0),
-                                  posinf=jnp.float32(1e6), neginf=jnp.float32(-1.0))
+            cost_f = jnp.nan_to_num(
+                cost_f, nan=jnp.float32(1e12), posinf=jnp.float32(1e12), neginf=jnp.float32(-1e12)
+            )
+            mm_f = jnp.nan_to_num(
+                mm_f, nan=jnp.float32(-1.0), posinf=jnp.float32(1e6), neginf=jnp.float32(-1.0)
+            )
             return cost_f, mm_f, all_pos, gc_f, bc_f
 
         # Vectorise over K samples; all args except u_seq are shared across samples
         batched = jax.vmap(
             _single_sample,
             in_axes=(
-                0,                                    # u_seq: axis 0 = K samples
-                None, None, None, None, None,         # initial state: shared
-                None, None, None, None, None,         # ref + hover + prev_u + inv_m
-                None, None, None, None, None, None, None,  # target gate
-                None, None, None,                     # next gate
-                None, None, None,                     # gate +2
-                None, None, None,                     # past gates
-                None,                                 # obstacles
+                0,  # u_seq: axis 0 = K samples
+                None,
+                None,
+                None,
+                None,
+                None,  # initial state: shared
+                None,
+                None,
+                None,
+                None,
+                None,  # ref + hover + prev_u + inv_m
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,  # target gate
+                None,
+                None,
+                None,  # next gate
+                None,
+                None,
+                None,  # gate +2
+                None,
+                None,
+                None,  # past gates
+                None,  # obstacles
             ),
         )
         return jax.jit(batched)
@@ -2111,7 +2141,7 @@ class SpatialScenarioMPCController(Controller):
         n_obs_pad = max(self._n_obstacles, 1)
         obs_xy = np.zeros((n_obs_pad, 2), dtype=np.float32)
         if self._n_obstacles > 0:
-            obs_xy[:self._n_obstacles] = self._obstacle_positions[:, :2].astype(np.float32)
+            obs_xy[: self._n_obstacles] = self._obstacle_positions[:, :2].astype(np.float32)
 
         # Call the compiled function
         out = self._jax_eval(
@@ -2126,32 +2156,41 @@ class SpatialScenarioMPCController(Controller):
             jnp.array(self._hover_u, dtype=jnp.float32),
             jnp.array(self._prev_u[:4], dtype=jnp.float32),
             jnp.float32(1.0 / self._mass_estimate),
-            jnp.array(tgt_gp), jnp.array(tgt_gR), jnp.array(tgt_n),
-            jnp.float32(signed0), jnp.float32(dist0_gate),
-            jnp.float32(float(target_valid)), jnp.float32(float(reachable)),
-            jnp.array(nxt_gp), jnp.array(nxt_gR), jnp.float32(float(next_valid)),
-            jnp.array(n2_gp), jnp.array(n2_gR), jnp.float32(float(next2_valid)),
-            jnp.array(past_gp_arr), jnp.array(past_gR_arr), jnp.array(past_mask_arr),
+            jnp.array(tgt_gp),
+            jnp.array(tgt_gR),
+            jnp.array(tgt_n),
+            jnp.float32(signed0),
+            jnp.float32(dist0_gate),
+            jnp.float32(float(target_valid)),
+            jnp.float32(float(reachable)),
+            jnp.array(nxt_gp),
+            jnp.array(nxt_gR),
+            jnp.float32(float(next_valid)),
+            jnp.array(n2_gp),
+            jnp.array(n2_gR),
+            jnp.float32(float(next2_valid)),
+            jnp.array(past_gp_arr),
+            jnp.array(past_gR_arr),
+            jnp.array(past_mask_arr),
             jnp.array(obs_xy),
         )
         jax.block_until_ready(out[0])
 
         cost = np.array(out[0], dtype=np.float64)
         min_margin = np.array(out[1], dtype=np.float64)
-        all_pos = np.array(out[2])         # (K, N+1, 3) float32
-        good_crossed = np.array(out[3])    # (K,) bool
-        bad_crossed = np.array(out[4])     # (K,) bool
+        all_pos = np.array(out[2])  # (K, N+1, 3) float32
+        good_crossed = np.array(out[3])  # (K,) bool
+        bad_crossed = np.array(out[4])  # (K,) bool
 
         # Add spatial corridor / progress costs in NumPy (GeometryEngine is not JAX-compatible)
         # Only evaluate on every other timestep to keep corridor overhead low for large K
         if self._geo is not None:
             for k in range(0, N, 2):
-                cost += self._spatial_corridor_cost_batch(
-                    all_pos[:, k + 1, :].astype(np.float64)
-                )
+                cost += self._spatial_corridor_cost_batch(all_pos[:, k + 1, :].astype(np.float64))
             # Approximate terminal velocity from finite difference of positions
-            term_vel = ((all_pos[:, -1, :] - all_pos[:, -2, :]).astype(np.float64)
-                        / max(self.MPC_DT, _EPS))
+            term_vel = (all_pos[:, -1, :] - all_pos[:, -2, :]).astype(np.float64) / max(
+                self.MPC_DT, _EPS
+            )
             progress, curv_cost = self._spatial_progress_and_curvature(
                 all_pos[:, -1, :].astype(np.float64), term_vel
             )
@@ -2179,7 +2218,7 @@ class SpatialScenarioMPCController(Controller):
 
         # --- NumPy fallback (always used for K=1 route-ranking calls) ---
         all_pos, all_vel, all_rpy, all_drpy = self._rollout_rpy_thrust(
-            samples, pos0, vel0, rpy0, drpy0,
+            samples, pos0, vel0, rpy0, drpy0
         )
 
         cost = np.zeros(K, dtype=np.float64)
@@ -2242,7 +2281,7 @@ class SpatialScenarioMPCController(Controller):
 
             # --- Control regularisation ---
             cost += self.W_INPUT * np.sum((u - self._hover_u) ** 2, axis=1)
-            cost += self.W_DINPUT * np.sum(du ** 2, axis=1)
+            cost += self.W_DINPUT * np.sum(du**2, axis=1)
 
             # --- Attitude penalty (NEW: penalise large roll/pitch) ---
             roll_abs = np.abs(rpy_k[:, 0])
@@ -2257,14 +2296,13 @@ class SpatialScenarioMPCController(Controller):
             e_p = pos - ref_pos[k + 1]
             e_v = vel - ref_vel[k + 1]
             cost += stage_w * (
-                self.W_REF_POS * np.sum(e_p ** 2, axis=1)
-                + self.W_REF_VEL * np.sum(e_v ** 2, axis=1)
+                self.W_REF_POS * np.sum(e_p**2, axis=1) + self.W_REF_VEL * np.sum(e_v**2, axis=1)
             )
 
             # --- Altitude safety ---
             below = np.maximum(self.GROUND_CLEARANCE - pos[:, 2], 0.0)
             above = np.maximum(pos[:, 2] - self.CEILING, 0.0)
-            cost += self.W_ALTITUDE * (below ** 2 + above ** 2)
+            cost += self.W_ALTITUDE * (below**2 + above**2)
             hard_alt = (pos[:, 2] < 0.02) | (pos[:, 2] > self.CEILING + 0.25)
             cost += self.W_ALTITUDE_HARD * hard_alt
             min_margin = np.minimum(min_margin, pos[:, 2] - self.GROUND_CLEARANCE)
@@ -2273,7 +2311,7 @@ class SpatialScenarioMPCController(Controller):
             # --- Speed limit ---
             speed = np.linalg.norm(vel, axis=1)
             overspeed = np.maximum(speed - self.V_MAX, 0.0)
-            cost += self.W_SPEED_LIMIT * overspeed ** 2
+            cost += self.W_SPEED_LIMIT * overspeed**2
 
             # --- Spatial corridor cost (NEW) ---
             if self._geo is not None:
@@ -2290,7 +2328,7 @@ class SpatialScenarioMPCController(Controller):
             if self._n_obstacles > 0:
                 # (K, n_obs, 2) distance vectors
                 diff_xy = pos[:, None, :2] - self._obstacle_positions[None, :, :2]
-                d = np.sqrt(np.maximum(np.sum(diff_xy ** 2, axis=2), _EPS))  # (K, n_obs)
+                d = np.sqrt(np.maximum(np.sum(diff_xy**2, axis=2), _EPS))  # (K, n_obs)
                 soft_r = self.OBSTACLE_RADIUS + self.OBSTACLE_BUFFER
                 v_soft = np.maximum(soft_r - d, 0.0)
                 v_hard = np.maximum(self.OBSTACLE_RADIUS - d, 0.0)
@@ -2309,7 +2347,7 @@ class SpatialScenarioMPCController(Controller):
                 still_approaching = ~(good_crossed | (signed_now > self.EXIT_DIST))
                 if np.any(still_approaching):
                     c_gate, m_gate = self._gate_geometry_cost_and_margin(
-                        pos[still_approaching], gp, R, active_funnel=True,
+                        pos[still_approaching], gp, R, active_funnel=True
                     )
                     cost[still_approaching] += c_gate
                     min_margin[still_approaching] = np.minimum(
@@ -2317,7 +2355,7 @@ class SpatialScenarioMPCController(Controller):
                     )
                 if np.any(~still_approaching):
                     c_gate_p, m_gate_p = self._gate_geometry_cost_and_margin(
-                        pos[~still_approaching], gp, R, active_funnel=False,
+                        pos[~still_approaching], gp, R, active_funnel=False
                     )
                     cost[~still_approaching] += self.GATE_COST_MULT_CURRENT_PASSED * c_gate_p
                     min_margin[~still_approaching] = np.minimum(
@@ -2343,9 +2381,7 @@ class SpatialScenarioMPCController(Controller):
                 # Altitude-to-gate penalty: penalise being below target gate Z
                 z_deficit = gp[2] - pos[:, 2]  # positive = drone is below gate
                 cost += (
-                    not_crossed_yet
-                    * self.W_GATE_ALTITUDE
-                    * np.maximum(z_deficit - 0.05, 0.0) ** 2
+                    not_crossed_yet * self.W_GATE_ALTITUDE * np.maximum(z_deficit - 0.05, 0.0) ** 2
                 )
 
                 # Near-gate velocity penalty: penalise retreating (v_toward < 0) when
@@ -2354,7 +2390,7 @@ class SpatialScenarioMPCController(Controller):
                     step_vel = (pos - pos_prev) / max(
                         self.MPC_DT / max(self.ROLLOUT_SUB_STEPS, 1), _EPS
                     )
-                    v_toward = step_vel @ normal          # scalar — same normal for all K
+                    v_toward = step_vel @ normal  # scalar — same normal for all K
                     near_gate = not_crossed_yet & (dist_gate_now < 0.30)
                     cost += near_gate * self.W_GATE_APPROACH_VEL * np.maximum(-v_toward, 0.0)
 
@@ -2376,8 +2412,10 @@ class SpatialScenarioMPCController(Controller):
 
                     cost += crossing * self.W_CROSS_CENTER * err
                     cost += crossing * inside * (-self.BONUS_GOOD_CROSS)
-                    bad_amount = (np.maximum(np.abs(y_c) - clear, 0.0) ** 2
-                                  + np.maximum(np.abs(z_c) - clear, 0.0) ** 2)
+                    bad_amount = (
+                        np.maximum(np.abs(y_c) - clear, 0.0) ** 2
+                        + np.maximum(np.abs(z_c) - clear, 0.0) ** 2
+                    )
                     cost += (
                         crossing
                         * (~inside)
@@ -2419,7 +2457,7 @@ class SpatialScenarioMPCController(Controller):
             # function is distance-based so far-away gates contribute ~0.
             for gp_past, R_past in past_gate_data:
                 cp, mp = self._gate_geometry_cost_and_margin(
-                    pos, gp_past, R_past, active_funnel=False,
+                    pos, gp_past, R_past, active_funnel=False
                 )
                 cost += self.GATE_COST_MULT_PAST * cp
                 min_margin = np.minimum(min_margin, mp)
@@ -2427,7 +2465,7 @@ class SpatialScenarioMPCController(Controller):
         # --- Terminal ---
         terminal_pos = all_pos[:, -1]
         terminal_error = terminal_pos - ref_pos[-1]
-        cost += self.W_TERMINAL_REF * np.sum(terminal_error ** 2, axis=1)
+        cost += self.W_TERMINAL_REF * np.sum(terminal_error**2, axis=1)
 
         if target_valid:
             signed_final = (terminal_pos - gp) @ normal
@@ -2491,7 +2529,7 @@ class SpatialScenarioMPCController(Controller):
         for k in range(1, N):
             smooth[:, k, :] = rho * smooth[:, k - 1, :] + c * eps[:, k, :]
 
-        center_bank = cleaned[:max(1, min(len(cleaned), self.ROUTE_TOP_K))]
+        center_bank = cleaned[: max(1, min(len(cleaned), self.ROUTE_TOP_K))]
         center_arr = np.stack(center_bank, axis=0)
         probs = np.exp(-0.70 * np.arange(len(center_bank), dtype=np.float64))
         probs /= max(float(np.sum(probs)), _EPS)
@@ -2508,13 +2546,13 @@ class SpatialScenarioMPCController(Controller):
         # Vertical variants
         up = cleaned[0].copy()
         down = cleaned[0].copy()
-        up[:, 3] += 0.015   # meaningful climb bias
+        up[:, 3] += 0.015  # meaningful climb bias
         down[:, 3] -= 0.010  # descent bias
         deterministic.extend([up, down])
 
         # Climb-priority variant: reduce forward pitch, add thrust
         climb_variant = cleaned[0].copy()
-        climb_variant[:, 1] *= 0.7    # reduce pitch → less forward speed, more vertical budget
+        climb_variant[:, 1] *= 0.7  # reduce pitch → less forward speed, more vertical budget
         climb_variant[:, 3] += 0.012  # add thrust for climb
         deterministic.append(climb_variant)
 
@@ -2537,10 +2575,7 @@ class SpatialScenarioMPCController(Controller):
         self._sigma = np.clip(self._sigma, self.SIGMA_MIN, self.SIGMA_MAX)
 
     def _update_distribution(
-        self,
-        samples: np.ndarray,
-        cost: np.ndarray,
-        min_margin: np.ndarray,
+        self, samples: np.ndarray, cost: np.ndarray, min_margin: np.ndarray
     ) -> tuple[np.ndarray, int, bool]:
         """Update MPPI mean and sigma from weighted sample costs (distribution fitting)."""
         safe_mask = min_margin > 0.0
@@ -2566,7 +2601,7 @@ class SpatialScenarioMPCController(Controller):
         elite_local = np.argsort(c)[:elite_count]
         elite_idx = fit_idx[elite_local]
         elite_delta = samples[elite_idx] - new_mean[None, :, :]
-        elite_std = np.sqrt(np.mean(elite_delta ** 2, axis=0) + 1e-8)
+        elite_std = np.sqrt(np.mean(elite_delta**2, axis=0) + 1e-8)
         target_sigma = np.clip(1.35 * elite_std, self.SIGMA_MIN, self.SIGMA_MAX)
         self._sigma = np.clip(
             0.82 * self._sigma + 0.18 * target_sigma, self.SIGMA_MIN, self.SIGMA_MAX
@@ -2579,9 +2614,7 @@ class SpatialScenarioMPCController(Controller):
     #  Candidate selection (from scenario MPC)
     # ------------------------------------------------------------------
     def _crossing_yz_from_trajectories(
-        self,
-        trajectories: np.ndarray,
-        pos0: np.ndarray,
+        self, trajectories: np.ndarray, pos0: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray]:
         """Compute gate-local YZ radius at the crossing point for each trajectory."""
         K = trajectories.shape[0]
@@ -2691,17 +2724,14 @@ class SpatialScenarioMPCController(Controller):
         return order[:1].astype(int), "emergency"
 
     def _elite_weighted_sequence(
-        self,
-        samples: np.ndarray,
-        cost: np.ndarray,
-        candidate_idx: np.ndarray,
+        self, samples: np.ndarray, cost: np.ndarray, candidate_idx: np.ndarray
     ) -> tuple[np.ndarray, int, int]:
         """Blend top-K elite candidates into a single control sequence (softmax-weighted)."""
         if candidate_idx.size == 0:
             best_idx = int(np.argmin(cost))
             return self._clip_u(samples[best_idx].copy()), best_idx, 1
         order = candidate_idx[np.argsort(cost[candidate_idx])]
-        elite = order[:max(1, min(int(self.ELITE_BLEND_COUNT), len(order)))]
+        elite = order[: max(1, min(int(self.ELITE_BLEND_COUNT), len(order)))]
         c = cost[elite]
         c0 = float(np.min(c))
         w = np.exp(-(c - c0) / max(float(self.ELITE_TEMPERATURE), _EPS))
@@ -2737,7 +2767,7 @@ class SpatialScenarioMPCController(Controller):
             r_pos, r_vel = self._generate_references(pos, vel, route)
             seq = self._make_pd_sequence(pos, vel, rpy, drpy, r_pos, r_vel)
             c, margin, traj, crossed, bad = self._score_rollouts(
-                seq[None, :, :], pos, vel, rpy, drpy, r_pos, r_vel,
+                seq[None, :, :], pos, vel, rpy, drpy, r_pos, r_vel
             )
             c0, m0 = float(c[0]), float(margin[0])
             crossed0, bad0 = bool(crossed[0]), bool(bad[0])
@@ -2754,13 +2784,26 @@ class SpatialScenarioMPCController(Controller):
                 select_score += 12000.0 * (0.02 - m0) ** 2 + 2500.0
 
             bucket = 0 if (crossed0 and not bad0 and m0 > 0.0) else (1 if m0 > 0.0 else 2)
-            records.append((
-                bucket, select_score, idx, route, geom, seq, r_pos, r_vel,
-                c0, m0, crossed0, bad0, traj[0].astype(np.float64),
-            ))
+            records.append(
+                (
+                    bucket,
+                    select_score,
+                    idx,
+                    route,
+                    geom,
+                    seq,
+                    r_pos,
+                    r_vel,
+                    c0,
+                    m0,
+                    crossed0,
+                    bad0,
+                    traj[0].astype(np.float64),
+                )
+            )
 
         records.sort(key=lambda item: (item[0], item[1]))
-        keep = records[:max(1, int(self.ROUTE_TOP_K))]
+        keep = records[: max(1, int(self.ROUTE_TOP_K))]
         routes_ranked = [r[3] for r in keep]
         costs_ranked = [float(r[4]) for r in keep]
         seqs_ranked = [r[5] for r in keep]
@@ -2816,10 +2859,7 @@ class SpatialScenarioMPCController(Controller):
         return current_yaw + float(np.clip(0.18 * yaw_error, -0.12, 0.12))
 
     def _finish_action(
-        self,
-        obs: dict[str, "NDArray[np.floating]"],
-        pos: np.ndarray,
-        u0: np.ndarray,
+        self, obs: dict[str, "NDArray[np.floating]"], pos: np.ndarray, u0: np.ndarray
     ) -> np.ndarray:
         """Clip, apply altitude safety guards, and return the [roll, pitch, yaw, thrust] action."""
         roll_cmd = float(np.clip(u0[0], -self.MAX_ROLL_PITCH_CMD, self.MAX_ROLL_PITCH_CMD))
@@ -2901,11 +2941,13 @@ class SpatialScenarioMPCController(Controller):
         # Convert position/velocity error to desired acceleration correction
         kp_xy, kp_z = 3.2, 3.5
         kd_xy, kd_z = 2.0, 2.2
-        a_corr = np.array([
-            kp_xy * e_p[0] + kd_xy * e_v[0],
-            kp_xy * e_p[1] + kd_xy * e_v[1],
-            kp_z * e_p[2] + kd_z * e_v[2],
-        ])
+        a_corr = np.array(
+            [
+                kp_xy * e_p[0] + kd_xy * e_v[0],
+                kp_xy * e_p[1] + kd_xy * e_v[1],
+                kp_z * e_p[2] + kd_z * e_v[2],
+            ]
+        )
 
         # Convert acceleration correction to attitude perturbation (small-angle)
         # roll ~ -ay / g, pitch ~ ax / g
@@ -2920,10 +2962,7 @@ class SpatialScenarioMPCController(Controller):
         return out
 
     def _project_polyline_tracking_target(
-        self,
-        polyline: np.ndarray,
-        pos: np.ndarray,
-        lookahead_dist: float,
+        self, polyline: np.ndarray, pos: np.ndarray, lookahead_dist: float
     ) -> tuple[np.ndarray, np.ndarray, int, float]:
         """Find the closest point on a polyline and return a lookahead target for path tracking."""
         pts = np.asarray(polyline, dtype=np.float64)
@@ -2978,9 +3017,7 @@ class SpatialScenarioMPCController(Controller):
             )
 
     def compute_control(
-        self,
-        obs: dict[str, "NDArray[np.floating]"],
-        info: dict | None = None,
+        self, obs: dict[str, "NDArray[np.floating]"], info: dict | None = None
     ) -> "NDArray[np.floating]":
         """Replan with MPPI or interpolate the cached plan, then output attitude+thrust."""
         _compute_t_start = time.perf_counter()
@@ -3024,8 +3061,8 @@ class SpatialScenarioMPCController(Controller):
             obs_target_gate = int(obs["target_gate"])
             if obs_target_gate != self._target_gate:
                 self._sigma = np.maximum(self._sigma, self.SIGMA_INIT[None, :])
-                self._last_planner_tick = -10**9
-                self._cached_plan_tick = -10**9
+                self._last_planner_tick = -(10**9)
+                self._cached_plan_tick = -(10**9)
                 self._cached_u_index = 0
                 self._active_route_points = None
                 self._last_best_traj = None
@@ -3059,7 +3096,7 @@ class SpatialScenarioMPCController(Controller):
         previous_plan_tick = self._cached_plan_tick
         self._last_planner_tick = self._tick
 
-        if not self.FORGET_OLD_SCENARIOS and previous_plan_tick > -10**8:
+        if not self.FORGET_OLD_SCENARIOS and previous_plan_tick > -(10**8):
             elapsed = max(0.0, (self._tick - previous_plan_tick) * self._dt)
             shift_steps = min(int(elapsed / max(self.MPC_DT, _EPS)), self.MPC_N - 1)
             for _ in range(shift_steps):
@@ -3068,7 +3105,7 @@ class SpatialScenarioMPCController(Controller):
         # Build and rank route candidates
         raw_routes, raw_route_costs = self._build_route_candidates(pos, vel)
         routes, route_costs, route_seqs, ref_pos, ref_vel = self._rank_routes_by_rollout(
-            pos, vel, rpy, drpy, raw_routes, raw_route_costs,
+            pos, vel, rpy, drpy, raw_routes, raw_route_costs
         )
 
         self._route_candidates = routes
@@ -3081,7 +3118,7 @@ class SpatialScenarioMPCController(Controller):
             else:
                 self._mean_u = self._clip_u(
                     (1.0 - self.ROUTE_MEAN_BLEND) * self._mean_u
-                    + self.ROUTE_MEAN_BLEND * route_seqs[0],
+                    + self.ROUTE_MEAN_BLEND * route_seqs[0]
                 )
 
         # Inject the warped (discovery-shifted) cached sequence as a candidate
@@ -3093,22 +3130,22 @@ class SpatialScenarioMPCController(Controller):
         # Sample and score with full RPY dynamics
         samples = self._sample_sequences(route_seqs)
         cost, min_margin, trajectories, good_crossed, bad_crossed = self._score_rollouts(
-            samples, pos, vel, rpy, drpy, ref_pos, ref_vel,
+            samples, pos, vel, rpy, drpy, ref_pos, ref_vel
         )
         new_mean, best_idx, any_safe = self._update_distribution(samples, cost, min_margin)
 
         candidate_idx, selection_label = self._choose_fresh_robust_candidates(
-            cost, min_margin, trajectories, good_crossed, bad_crossed, pos,
+            cost, min_margin, trajectories, good_crossed, bad_crossed, pos
         )
         selected_sequence, selected_idx, elite_count = self._elite_weighted_sequence(
-            samples, cost, candidate_idx,
+            samples, cost, candidate_idx
         )
 
         chosen_u0 = selected_sequence[0].copy()
         route_u0 = route_seqs[0][0].copy() if route_seqs else chosen_u0.copy()
         best_margin = float(min_margin[selected_idx])
-        robust_selected = (
-            best_margin > self.SELECTION_MARGIN and not bool(bad_crossed[selected_idx])
+        robust_selected = best_margin > self.SELECTION_MARGIN and not bool(
+            bad_crossed[selected_idx]
         )
 
         if robust_selected:
@@ -3124,8 +3161,9 @@ class SpatialScenarioMPCController(Controller):
         u0 = self._route_tracking_feedback(u0, pos, vel, rpy, 0.0, ref_pos, ref_vel)
 
         self._mean_u = self._clip_u(
-            selected_sequence.copy() if self.FORGET_OLD_SCENARIOS
-            else 0.70 * selected_sequence + 0.30 * new_mean,
+            selected_sequence.copy()
+            if self.FORGET_OLD_SCENARIOS
+            else 0.70 * selected_sequence + 0.30 * new_mean
         )
 
         self._cached_u_sequence = selected_sequence.copy()
@@ -3172,9 +3210,7 @@ class SpatialScenarioMPCController(Controller):
                 "?" if anchor_m is None else ("OK" if anchor_m > 0.01 else f"BAD({anchor_m:.3f})")
             )
             n_safe = int(np.sum(min_margin > 0.0)) if min_margin is not None else 0
-            gates_passed = (
-                self._n_gates if self._target_gate < 0 else int(self._target_gate)
-            )
+            gates_passed = self._n_gates if self._target_gate < 0 else int(self._target_gate)
             print(
                 f"[SPATIAL-SCENARIO-MPC] step={self._tick:04d} gate={self._target_gate} "
                 f"passed={gates_passed}/{self._n_gates} "
@@ -3189,17 +3225,16 @@ class SpatialScenarioMPCController(Controller):
         # --- Detailed gate-approach diagnostics (every replan tick when close to gate) ---
         if self.DEBUG_PRINT_ENABLED and 0 <= self._target_gate < self._n_gates:
             _gp_d = self._gate_positions[self._target_gate]
-            _n_d  = self._get_gate_normal(self._target_gate, pos)
+            _n_d = self._get_gate_normal(self._target_gate, pos)
             _dg_d = float(np.linalg.norm(pos - _gp_d))
             if _dg_d < 0.70:
-                _term   = trajectories[:, -1, :].astype(np.float64)
-                _sf     = (_term - _gp_d) @ _n_d            # signed distance past gate (+ = past)
+                _term = trajectories[:, -1, :].astype(np.float64)
+                _sf = (_term - _gp_d) @ _n_d  # signed distance past gate (+ = past)
                 _good_pct = 100.0 * float(np.mean(good_crossed))
-                _bad_pct  = 100.0 * float(np.mean(bad_crossed))
-                _vt     = float(vel @ _n_d)                  # current velocity toward gate
-                _reach  = _dg_d < min(
-                    self.REACHABLE_DIST_CAP,
-                    max(0.85, 1.10 * self.V_MAX * self.MPC_N * self.MPC_DT),
+                _bad_pct = 100.0 * float(np.mean(bad_crossed))
+                _vt = float(vel @ _n_d)  # current velocity toward gate
+                _reach = _dg_d < min(
+                    self.REACHABLE_DIST_CAP, max(0.85, 1.10 * self.V_MAX * self.MPC_N * self.MPC_DT)
                 )
                 _sel_sf = float((_term[int(selected_idx)] - _gp_d) @ _n_d)
                 _sf_pos_pct = 100.0 * float(np.mean(_sf > 0.0))  # % rollouts reaching past gate
@@ -3218,9 +3253,7 @@ class SpatialScenarioMPCController(Controller):
     # ------------------------------------------------------------------
     #  Callbacks
     # ------------------------------------------------------------------
-    def _print_episode_summary(
-        self, new_target: int, terminated: bool, truncated: bool,
-    ) -> None:
+    def _print_episode_summary(self, new_target: int, terminated: bool, truncated: bool) -> None:
         """Print one-line episode outcome (FINISHED/CRASH/TIMEOUT) regardless of debug flag."""
         if self._summary_printed:
             return
@@ -3237,9 +3270,7 @@ class SpatialScenarioMPCController(Controller):
             gates_passed = max(0, int(self._target_gate))
 
         flight_time = self._tick * self._dt
-        lag_rate = (
-            100.0 * self._compute_lag_count / max(1, self._compute_total_count)
-        )
+        lag_rate = 100.0 * self._compute_lag_count / max(1, self._compute_total_count)
         print(
             f"[SPATIAL-EP] {outcome:<8s} gates={gates_passed}/{self._n_gates} "
             f"time={flight_time:5.2f}s ticks={self._tick:4d} "
@@ -3275,8 +3306,8 @@ class SpatialScenarioMPCController(Controller):
 
         if gate_changed:
             self._sigma = np.maximum(self._sigma, self.SIGMA_INIT[None, :])
-            self._last_planner_tick = -10**9
-            self._cached_plan_tick = -10**9
+            self._last_planner_tick = -(10**9)
+            self._cached_plan_tick = -(10**9)
             self._cached_u_index = 0
             self._active_route_points = None
             self._last_best_traj = None
@@ -3335,9 +3366,7 @@ class SpatialScenarioMPCController(Controller):
             # --- Smooth-warp the cached trajectory instead of discarding ---
             # The old trajectory is ~95% correct; we just shift it toward the
             # newly-discovered positions so MPPI has a great warm-start.
-            warped_seq = self._warp_cached_sequence_for_discovery(
-                gate_deltas, obs_deltas,
-            )
+            warped_seq = self._warp_cached_sequence_for_discovery(gate_deltas, obs_deltas)
             if warped_seq is not None:
                 self._cached_u_sequence = warped_seq
                 self._mean_u = warped_seq.copy()
@@ -3352,8 +3381,8 @@ class SpatialScenarioMPCController(Controller):
                 self._last_route_anchor_traj = None
 
             self._sigma = np.maximum(self._sigma, self.SIGMA_INIT[None, :])
-            self._last_planner_tick = -10**9
-            self._cached_plan_tick = -10**9
+            self._last_planner_tick = -(10**9)
+            self._cached_plan_tick = -(10**9)
             self._cached_u_index = 0
 
         return self._finished
@@ -3362,13 +3391,10 @@ class SpatialScenarioMPCController(Controller):
     #  Trajectory warping on object discovery
     # ------------------------------------------------------------------
     def _warp_cached_sequence_for_discovery(
-        self,
-        gate_deltas: list[tuple[int, np.ndarray]],
-        obs_deltas: list[tuple[int, np.ndarray]],
+        self, gate_deltas: list[tuple[int, np.ndarray]], obs_deltas: list[tuple[int, np.ndarray]]
     ) -> np.ndarray | None:
         """Shift the cached control sequence toward newly discovered gate/obstacle positions."""
-        if (self._cached_u_sequence is None or
-                len(gate_deltas) == 0 and len(obs_deltas) == 0):
+        if self._cached_u_sequence is None or len(gate_deltas) == 0 and len(obs_deltas) == 0:
             return None
 
         # We need a predicted trajectory from the old mean sequence
@@ -3379,9 +3405,7 @@ class SpatialScenarioMPCController(Controller):
         drpy0 = self._last_drpy.copy()
 
         # Quick single-sample rollout of the old sequence
-        old_traj, _, _, _ = self._rollout_rpy_thrust(
-            old_seq[None, :, :], pos0, vel0, rpy0, drpy0,
-        )
+        old_traj, _, _, _ = self._rollout_rpy_thrust(old_seq[None, :, :], pos0, vel0, rpy0, drpy0)
         old_traj = old_traj[0]  # (N+1, 3)
 
         N = self.MPC_N
@@ -3427,10 +3451,9 @@ class SpatialScenarioMPCController(Controller):
             # Convert to attitude perturbation
             d_roll = float(np.clip(-a_corr[1] / self._g, -0.12, 0.12))
             d_pitch = float(np.clip(a_corr[0] / self._g, -0.12, 0.12))
-            d_thrust = float(np.clip(
-                a_corr[2] * self._mass_estimate / self._cmd_f_coef,
-                -0.02, 0.02,
-            ))
+            d_thrust = float(
+                np.clip(a_corr[2] * self._mass_estimate / self._cmd_f_coef, -0.02, 0.02)
+            )
 
             warped[k, 0] += d_roll
             warped[k, 1] += d_pitch
@@ -3443,16 +3466,27 @@ class SpatialScenarioMPCController(Controller):
         from crazyflow.sim.visualize import draw_line, draw_points
 
         if self._active_route_points is not None and len(self._active_route_points) > 1:
-            draw_line(sim, self._active_route_points, rgba=(1.0, 0.85, 0.1, 0.90),
-                      start_size=2.2, end_size=2.2)
+            draw_line(
+                sim,
+                self._active_route_points,
+                rgba=(1.0, 0.85, 0.1, 0.90),
+                start_size=2.2,
+                end_size=2.2,
+            )
 
         if self._last_best_traj is not None and len(self._last_best_traj) > 1:
-            draw_line(sim, self._last_best_traj, rgba=(0.0, 1.0, 0.2, 0.85),
-                      start_size=2.0, end_size=2.0)
+            draw_line(
+                sim, self._last_best_traj, rgba=(0.0, 1.0, 0.2, 0.85), start_size=2.0, end_size=2.0
+            )
 
         if self._last_route_anchor_traj is not None and len(self._last_route_anchor_traj) > 1:
-            draw_line(sim, self._last_route_anchor_traj, rgba=(0.0, 0.9, 1.0, 0.50),
-                      start_size=1.5, end_size=1.5)
+            draw_line(
+                sim,
+                self._last_route_anchor_traj,
+                rgba=(0.0, 0.9, 1.0, 0.50),
+                start_size=1.5,
+                end_size=1.5,
+            )
 
         if 0 <= self._target_gate < self._n_gates:
             gp = self._gate_positions[self._target_gate]
