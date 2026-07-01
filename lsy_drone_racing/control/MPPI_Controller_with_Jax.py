@@ -125,7 +125,7 @@ class SpatialScenarioMPCController(Controller):
     MPC_N = 9  # prediction horizon steps (9 × 0.11 = 0.99s)
     MPC_DT = 0.110  # prediction time step [s]
     K_SAMPLES = 4096  # number of MPPI rollout samples per plan (JAX-parallelised)
-    USE_JAX = True  # use JAX       JIT+vmap acceleration (NumPy fallback if unavailable)
+    USE_JAX = True  # use JAX JIT+vmap acceleration (NumPy fallback if unavailable)
     N_ELITES = 1  # number of elite samples for distribution update
     TEMPERATURE = 50.0  # MPPI softmax temperature (lower = greedier)
     NOISE_RHO = 0.84  # temporal correlation of MPPI noise (AR(1) coefficient)
@@ -500,7 +500,7 @@ class SpatialScenarioMPCController(Controller):
         return np.array([s, w1, w2, ds, dw1, dw2], dtype=np.float64)
 
     def _spatial_corridor_cost_batch(self, positions: np.ndarray) -> np.ndarray:
-        """Penalise lateral deviations outside the spatial flight corridor(batch of K positions)."""
+        """Penalise lateral deviation outside the spatial flight corridor (batch of K positions)."""
         if self._geo is None:
             return np.zeros(positions.shape[0], dtype=np.float64)
 
