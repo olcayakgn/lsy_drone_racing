@@ -34,13 +34,15 @@ import argparse
 import math
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib.patches import Circle, Rectangle
 from matplotlib.widgets import Button
 
+if TYPE_CHECKING:
+    from matplotlib.backend_bases import Event
 
 _DEFAULT_MOVE_PICK_RADIUS_M = 0.35
 _GATE_ROT_STEP_RAD = math.radians(5.0)
@@ -140,6 +142,7 @@ def plot_map(
     out_path: Path | None = None,
     edit_start: bool = True,
 ) -> None:
+    """Plot (and optionally interactively edit) a track config as a 2D top-down map."""
     cfg = _load_toml(config_path)
 
     track = _get_nested(cfg, "env", "track")
@@ -169,7 +172,12 @@ def plot_map(
     if isinstance(lim, dict) and "pos_limit_low" in lim and "pos_limit_high" in lim:
         low = lim.get("pos_limit_low")
         high = lim.get("pos_limit_high")
-        if isinstance(low, (list, tuple)) and isinstance(high, (list, tuple)) and len(low) >= 2 and len(high) >= 2:
+        if (
+            isinstance(low, (list, tuple))
+            and isinstance(high, (list, tuple))
+            and len(low) >= 2
+            and len(high) >= 2
+        ):
             x0, y0 = float(low[0]), float(low[1])
             x1, y1 = float(high[0]), float(high[1])
             # Normalize order just in case a config swaps low/high.
@@ -197,7 +205,9 @@ def plot_map(
     pole_labels = []
     for i, pole in enumerate(poles):
         if not isinstance(pole, dict) or "pos" not in pole:
-            pole_artists.append((Circle((0.0, 0.0), 0.0, visible=False), Circle((0.0, 0.0), 0.0, visible=False)))
+            pole_artists.append(
+                (Circle((0.0, 0.0), 0.0, visible=False), Circle((0.0, 0.0), 0.0, visible=False))
+            )
             pole_labels.append(None)
             continue
         x, y = _xy(pole["pos"])
@@ -328,7 +338,15 @@ def plot_map(
     ax.legend(
         handles=[
             Line2D([0], [0], marker="s", color="k", linestyle="None", markersize=8, label="Start"),
-            Line2D([0], [0], marker="o", color="k", linestyle="None", markersize=6, label="Pole/obstacle"),
+            Line2D(
+                [0],
+                [0],
+                marker="o",
+                color="k",
+                linestyle="None",
+                markersize=6,
+                label="Pole/obstacle",
+            ),
         ],
         loc="upper right",
         framealpha=0.9,
@@ -347,7 +365,9 @@ def plot_map(
     # -----------------
     # Interactive editor
     # -----------------
-    help_text = "Edit mode: click-select, drag-move | E/Shift+E rotate | wheel rotate | S save | Esc clear"
+    help_text = (
+        "Edit mode: click-select, drag-move | E/Shift+E rotate | wheel rotate | S save | Esc clear"
+    )
     fig.text(0.01, 0.02, help_text, fontsize=9, alpha=0.85)
 
     if out_path is None:
@@ -580,7 +600,7 @@ def plot_map(
         pass
     save_btn.on_clicked(lambda _event: _save())
 
-    def on_press(event) -> None:
+    def on_press(event: Event) -> None:
         if event.inaxes != ax:
             return
         if event.key == "escape":
@@ -599,14 +619,14 @@ def plot_map(
             _save()
             return
 
-    def on_scroll(event) -> None:
+    def on_scroll(event: Event) -> None:
         if event.inaxes != ax:
             return
         if getattr(event, "step", 0) == 0:
             return
         _rotate_selected(_GATE_ROT_WHEEL_STEP_RAD * float(event.step))
 
-    def on_button_press(event) -> None:
+    def on_button_press(event: Event) -> None:
         if event.inaxes != ax or event.button != 1:
             return
         if event.xdata is None or event.ydata is None:
@@ -615,12 +635,12 @@ def plot_map(
         dragging["active"] = selected["kind"] is not None
         fig.canvas.draw_idle()
 
-    def on_button_release(event) -> None:
+    def on_button_release(event: Event) -> None:
         if event.button != 1:
             return
         dragging["active"] = False
 
-    def on_motion(event) -> None:
+    def on_motion(event: Event) -> None:
         if not dragging["active"]:
             return
         if event.inaxes != ax:
@@ -655,6 +675,7 @@ def plot_map(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Parse CLI args and plot the track map; return a process exit code."""
     parser = argparse.ArgumentParser(description="Plot a 2D top-down track map from a TOML config.")
     parser.add_argument(
         "--config",
@@ -674,9 +695,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Output TOML filename (saved under ./config/). Use --name as an alias.",
     )
     parser.add_argument(
-        "--no-edit-start",
-        action="store_true",
-        help="Do not allow editing the start pose.",
+        "--no-edit-start", action="store_true", help="Do not allow editing the start pose."
     )
 
     args = parser.parse_args(argv)

@@ -43,7 +43,7 @@ from lsy_drone_racing.utils import load_config, load_controller  # noqa: E402
 logger = logging.getLogger(__name__)
 
 
-def _true_track(env) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _true_track(env: gymnasium.Env) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Read the true gate/obstacle layout from the env internals.
 
     The observation masks gate/obstacle positions until the drone has sensed
@@ -56,7 +56,7 @@ def _true_track(env) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return gates_pos, gates_quat, obstacles_pos
 
 
-def _extract_planned_route(ctrl) -> np.ndarray | None:
+def _extract_planned_route(ctrl: object) -> np.ndarray | None:
     """Return the controller's currently-planned route polyline, if exposed.
 
     Best-effort: try a few attribute names used by the in-repo controllers.
@@ -119,12 +119,23 @@ def _plot_run(
             ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color=col, lw=lw, alpha=alpha)
         # required pass direction (gate +x)
         ax.arrow(
-            gp[0], gp[1], 0.35 * x_axis[0], 0.35 * x_axis[1],
-            head_width=0.08, head_length=0.08, color=col, alpha=0.9,
+            gp[0],
+            gp[1],
+            0.35 * x_axis[0],
+            0.35 * x_axis[1],
+            head_width=0.08,
+            head_length=0.08,
+            color=col,
+            alpha=0.9,
         )
         ax.text(
-            gp[0], gp[1] + 0.14, f"G{gi} (z={gp[2]:.2f})", color=col,
-            ha="center", fontsize=10, fontweight="bold",
+            gp[0],
+            gp[1] + 0.14,
+            f"G{gi} (z={gp[2]:.2f})",
+            color=col,
+            ha="center",
+            fontsize=10,
+            fontweight="bold",
         )
 
     for g in range(-1, n_gates):
@@ -136,8 +147,13 @@ def _plot_run(
 
     if planned_route is not None and len(planned_route) >= 2:
         ax.plot(
-            planned_route[:, 0], planned_route[:, 1],
-            "--", color="magenta", lw=1.2, alpha=0.7, label="planned route (final)",
+            planned_route[:, 0],
+            planned_route[:, 1],
+            "--",
+            color="magenta",
+            lw=1.2,
+            alpha=0.7,
+            label="planned route (final)",
         )
 
     ax.plot(start[0], start[1], "ks", ms=10, label="start")
@@ -157,8 +173,13 @@ def _plot_run(
     for c in np.where(np.diff(tgt) != 0)[0]:
         axz.axvline(t[c], color="green", ls=":", alpha=0.7)
     axz.text(
-        0.02, 0.97, "green dotted = gate passed",
-        transform=axz.transAxes, fontsize=8, va="top", color="green",
+        0.02,
+        0.97,
+        "green dotted = gate passed",
+        transform=axz.transAxes,
+        fontsize=8,
+        va="top",
+        color="green",
     )
 
     # ----- speed |v| vs time -----
@@ -169,10 +190,16 @@ def _plot_run(
     axv.grid(alpha=0.3)
     axv.plot(t, speed, "-", color="darkorange", lw=1.5)
     if speed.size:
-        axv.axhline(float(np.mean(speed)), color="gray", ls=":", alpha=0.6,
-                    label=f"mean {np.mean(speed):.2f}")
-        axv.axhline(float(np.max(speed)), color="red", ls=":", alpha=0.4,
-                    label=f"peak {np.max(speed):.2f}")
+        axv.axhline(
+            float(np.mean(speed)),
+            color="gray",
+            ls=":",
+            alpha=0.6,
+            label=f"mean {np.mean(speed):.2f}",
+        )
+        axv.axhline(
+            float(np.max(speed)), color="red", ls=":", alpha=0.4, label=f"peak {np.max(speed):.2f}"
+        )
         axv.legend(fontsize=8, loc="lower right")
     for c in np.where(np.diff(tgt) != 0)[0]:
         axv.axvline(t[c], color="green", ls=":", alpha=0.7)
@@ -260,11 +287,21 @@ def debug_plot(
 
         path = out / f"run_{run}.png"
         _plot_run(
-            path, run,
-            np.asarray(traj), np.asarray(vel), np.asarray(tgt),
-            gates_pos, gates_quat, obstacles_pos,
-            start, gates_passed, finished, flight_time, outcome,
-            planned_route, env_freq,
+            path,
+            run,
+            np.asarray(traj),
+            np.asarray(vel),
+            np.asarray(tgt),
+            gates_pos,
+            gates_quat,
+            obstacles_pos,
+            start,
+            gates_passed,
+            finished,
+            flight_time,
+            outcome,
+            planned_route,
+            env_freq,
         )
         print(
             f"run {run}: gates_passed={gates_passed} finished={finished} "
