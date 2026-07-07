@@ -46,8 +46,9 @@ from lsy_drone_racing.control.controller import Controller
 
 # Spatial geometry engine (Bishop frame, corridors)
 try:
+    from crazyflow.sim.visualize import draw_line
+
     from lsy_drone_racing.control.GeometryEngines.geometryEngine import GeometryEngine
-    from lsy_drone_racing.utils.utils import draw_line
 
     _HAS_SPATIAL = True
 except ImportError as _imp_err:
@@ -2997,7 +2998,7 @@ class SpatialScenarioMPCController(Controller):
     #  Main controller API
     # ------------------------------------------------------------------
     def _check_compute_lag(self, t_start: float) -> None:
-        """Warn when compute_control exceeds the real-time control period."""
+        """Track compute lag; reported once in the end-of-episode summary."""
         elapsed_ms = 1000.0 * (time.perf_counter() - t_start)
         self._compute_total_count += 1
         if self._compute_total_count == 1:
@@ -3007,14 +3008,6 @@ class SpatialScenarioMPCController(Controller):
         deadline_ms = 1000.0 * self._compute_deadline_s
         if elapsed_ms > deadline_ms:
             self._compute_lag_count += 1
-            lag_rate = 100.0 * self._compute_lag_count / max(1, self._compute_total_count)
-            print(
-                f"[SPATIAL-LAG] WARNING controller lagging: "
-                f"compute={elapsed_ms:.1f}ms > deadline={deadline_ms:.1f}ms "
-                f"(tick={self._tick}, lag "
-                f"{self._compute_lag_count}/{self._compute_total_count}={lag_rate:.1f}%, "
-                f"ema={self._compute_ms_ema:.1f}ms)"
-            )
 
     def compute_control(
         self, obs: dict[str, "NDArray[np.floating]"], info: dict | None = None
